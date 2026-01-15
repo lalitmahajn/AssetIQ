@@ -1,0 +1,114 @@
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${PLANT_POSTGRES_USER:-assetiq}
+      POSTGRES_PASSWORD: ${PLANT_POSTGRES_PASSWORD:?set PLANT_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${PLANT_POSTGRES_DB:-assetiq_plant}
+    ports:
+      - "${PLANT_POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - plant_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${PLANT_POSTGRES_USER:-assetiq}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  reverse_proxy:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.plant.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${PLANT_PROXY_PORT:-8080}:80"
+    depends_on:
+      plant_backend:
+        condition: service_healthy
+
+  plant_backend:
+    build:
+      context: ../../
+      dockerfile: docker/plant/Dockerfile.plant_backend
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      PLANT_SITE_CODE: ${PLANT_SITE_CODE:-P01}
+      PLANT_DB_URL: postgresql+psycopg2://${PLANT_POSTGRES_USER:-assetiq}:${PLANT_POSTGRES_PASSWORD}@plant-postgres-1:5432/${PLANT_POSTGRES_DB:-assetiq_plant}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SYNC_HMAC_SECRET: ${SYNC_HMAC_SECRET:?set SYNC_HMAC_SECRET}
+      STATION_SECRET_ENC_KEY: ${STATION_SECRET_ENC_KEY:?set STATION_SECRET_ENC_KEY}
+      # one-time bootstrap (only runs if no user exists)
+      BOOTSTRAP_ADMIN_EMAIL: ${BOOTSTRAP_ADMIN_EMAIL:-}
+      BOOTSTRAP_ADMIN_PIN: ${BOOTSTRAP_ADMIN_PIN:-}
+      # email
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-AssetIQ Alerts <alerts@company.com>}
+      EMAIL_IT: ${EMAIL_IT:-it-alerts@company.com}
+      HQ_RECEIVER_URL: ${HQ_RECEIVER_URL:-http://hq_backend:8100/sync/receive}
+      REPORT_VAULT_ROOT: /data/report_vault
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz').read()" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "${PLANT_HTTP_PORT:-8000}:8000"
+    volumes:
+      - ../../:/app
+      - report_vault:/data/report_vault
+
+  plant_worker:
+    build:
+      context: ../../
+      dockerfile: docker/plant/Dockerfile.plant_worker
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      PLANT_SITE_CODE: ${PLANT_SITE_CODE:-P01}
+      PLANT_DB_URL: postgresql+psycopg2://${PLANT_POSTGRES_USER:-assetiq}:${PLANT_POSTGRES_PASSWORD}@plant-postgres-1:5432/${PLANT_POSTGRES_DB:-assetiq_plant}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SYNC_HMAC_SECRET: ${SYNC_HMAC_SECRET:?set SYNC_HMAC_SECRET}
+      STATION_SECRET_ENC_KEY: ${STATION_SECRET_ENC_KEY:?set STATION_SECRET_ENC_KEY}
+      HQ_RECEIVER_URL: ${HQ_RECEIVER_URL:-http://hq_backend:8100/sync/receive}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-AssetIQ Alerts <alerts@company.com>}
+      EMAIL_IT: ${EMAIL_IT:-it-alerts@company.com}
+      REPORT_VAULT_ROOT: /data/report_vault
+    depends_on:
+      - postgres
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - ../../:/app
+      - report_vault:/data/report_vault
+
+  plant_ui:
+    build:
+      context: ../../ui
+      dockerfile: ../docker/plant/Dockerfile.plant_ui
+    ports:
+      - "${PLANT_UI_PORT:-5173}:5173"
+    environment:
+      VITE_API_BASE: ${PLANT_API_BASE:-http://localhost:8000}
+    volumes:
+      - ../../ui:/app
+      - /app/node_modules
+    depends_on:
+      - plant_backend
+
+volumes:
+  plant_pg:
+  report_vault:
+
+
+networks:
+  default:
+    name: assetiq_net
+    external: true

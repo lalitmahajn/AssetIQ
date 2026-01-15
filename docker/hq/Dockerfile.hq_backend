@@ -1,0 +1,9 @@
+FROM python:3.11-slim
+WORKDIR /app
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY common_core /app/common_core
+COPY apps /app/apps
+COPY tools /app/tools
+ENV PYTHONPATH=/app
+CMD ["uvicorn", "apps.hq_backend.main:app", "--host", "0.0.0.0", "--port", "8100"]

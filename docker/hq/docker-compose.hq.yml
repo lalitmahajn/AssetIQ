@@ -1,0 +1,90 @@
+services:
+  hq_postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${HQ_POSTGRES_USER:-assetiq}
+      POSTGRES_PASSWORD: ${HQ_POSTGRES_PASSWORD:?set HQ_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${HQ_POSTGRES_DB:-assetiq_hq}
+    ports:
+      - "${HQ_POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - hq_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${HQ_POSTGRES_USER:-assetiq}" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  reverse_proxy:
+    image: nginx:alpine
+    volumes:
+      - ./nginx.hq.conf:/etc/nginx/conf.d/default.conf:ro
+    ports:
+      - "${HQ_PROXY_PORT:-8081}:80"
+    depends_on:
+      hq_backend:
+        condition: service_healthy
+
+  hq_backend:
+    build:
+      context: ../../
+      dockerfile: docker/hq/Dockerfile.hq_backend
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      HQ_DB_URL: postgresql+psycopg2://${HQ_POSTGRES_USER:-assetiq}:${HQ_POSTGRES_PASSWORD}@hq_postgres:5432/${HQ_POSTGRES_DB:-assetiq_hq}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SYNC_HMAC_SECRET: ${SYNC_HMAC_SECRET:?set SYNC_HMAC_SECRET}
+      STATION_SECRET_ENC_KEY: ${STATION_SECRET_ENC_KEY:?set STATION_SECRET_ENC_KEY}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-AssetIQ Alerts <alerts@company.com>}
+      EMAIL_IT: ${EMAIL_IT:-it-alerts@company.com}
+      ENABLE_INTELLIGENCE: "true"
+      REPORT_VAULT_ROOT: /data/report_vault
+    depends_on:
+      hq_postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/healthz').read()" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    ports:
+      - "${HQ_HTTP_PORT:-8100}:8100"
+    volumes:
+      - report_vault:/data/report_vault
+
+  hq_worker:
+    build:
+      context: ../../
+      dockerfile: docker/hq/Dockerfile.hq_worker
+    environment:
+      APP_ENV: ${APP_ENV:-prod}
+      HQ_DB_URL: postgresql+psycopg2://${HQ_POSTGRES_USER:-assetiq}:${HQ_POSTGRES_PASSWORD}@hq_postgres:5432/${HQ_POSTGRES_DB:-assetiq_hq}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      SYNC_HMAC_SECRET: ${SYNC_HMAC_SECRET:?set SYNC_HMAC_SECRET}
+      STATION_SECRET_ENC_KEY: ${STATION_SECRET_ENC_KEY:?set STATION_SECRET_ENC_KEY}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-AssetIQ Alerts <alerts@company.com>}
+      EMAIL_IT: ${EMAIL_IT:-it-alerts@company.com}
+      ENABLE_INTELLIGENCE: "true"
+      REPORT_VAULT_ROOT: /data/report_vault
+    depends_on:
+      - hq_postgres
+    volumes:
+      - report_vault:/data/report_vault
+
+volumes:
+  hq_pg:
+  report_vault:
+
+
+networks:
+  default:
+    name: assetiq_net
+    external: true
