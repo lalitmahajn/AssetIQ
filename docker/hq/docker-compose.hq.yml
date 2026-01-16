@@ -22,8 +22,7 @@ services:
     ports:
       - "${HQ_PROXY_PORT:-8081}:80"
     depends_on:
-      hq_backend:
-        condition: service_healthy
+      - hq_backend
 
   hq_backend:
     build:
@@ -46,8 +45,7 @@ services:
       HQ_BOOTSTRAP_ADMIN_USERNAME: ${HQ_BOOTSTRAP_ADMIN_USERNAME:-}
       HQ_BOOTSTRAP_ADMIN_PIN: ${HQ_BOOTSTRAP_ADMIN_PIN:-}
     depends_on:
-      hq_postgres:
-        condition: service_healthy
+      - hq_postgres
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8100/healthz').read()" ]
       interval: 30s

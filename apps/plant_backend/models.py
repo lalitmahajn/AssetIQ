@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, JSON, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text
+
 from common_core.db import Base
 
 
@@ -32,13 +33,14 @@ class Ticket(Base):
     status = Column(String(32), nullable=False, index=True, default="OPEN")
     priority = Column(String(32), nullable=False, default="MEDIUM")
     assigned_to_user_id = Column(String(64), nullable=True)
+    assigned_dept = Column(String(64), nullable=True)
     source = Column(String(32), nullable=False, default="MANUAL")  # MANUAL, AUTO
-    stop_id = Column(String(64), nullable=True, index=True)        # Link to StopQueue/Timeline
+    stop_id = Column(String(64), nullable=True, index=True)  # Link to StopQueue/Timeline
     created_at_utc = Column(DateTime, nullable=False)
     sla_due_at_utc = Column(DateTime, nullable=True)
     acknowledged_at_utc = Column(DateTime, nullable=True)
     resolved_at_utc = Column(DateTime, nullable=True)
-    resolution_reason = Column(String(64), nullable=True)          # Root cause code
+    resolution_reason = Column(String(64), nullable=True)  # Root cause code
     close_note = Column(Text, nullable=True)
 
 
@@ -127,7 +129,7 @@ class Asset(Base):
     __tablename__ = "assets"
     id = Column(String(64), primary_key=True)
     site_code = Column(String(16), nullable=False, index=True)
-    asset_code = Column(String(64), nullable=False, index=True) # human readable unique code
+    asset_code = Column(String(64), nullable=False, index=True)  # human readable unique code
     name = Column(String(256), nullable=False)
     description = Column(Text, nullable=True)  # Added for UI compatibility
     category = Column(String(128), nullable=False)
@@ -154,7 +156,8 @@ class MasterType(Base):
     created_at_utc = Column(DateTime, nullable=False)
     updated_at_utc = Column(DateTime, nullable=True)
 
-    from sqlalchemy import UniqueConstraint, Index
+    from sqlalchemy import Index, UniqueConstraint
+
     __table_args__ = (
         UniqueConstraint("site_code", "type_code", name="uq_master_types_site_type"),
         Index("ix_master_types_site_active", "site_code", "is_active"),
@@ -173,9 +176,12 @@ class MasterItem(Base):
     created_at_utc = Column(DateTime, nullable=False)
     updated_at_utc = Column(DateTime, nullable=True)
 
-    from sqlalchemy import UniqueConstraint, Index
+    from sqlalchemy import Index, UniqueConstraint
+
     __table_args__ = (
-        UniqueConstraint("site_code", "master_type_code", "item_code", name="uq_master_items_site_type_code"),
+        UniqueConstraint(
+            "site_code", "master_type_code", "item_code", name="uq_master_items_site_type_code"
+        ),
         Index("ix_master_items_site_type_active", "site_code", "master_type_code", "is_active"),
     )
 
@@ -188,7 +194,9 @@ class ReasonSuggestion(Base):
     suggested_name = Column(String(256), nullable=False)
     normalized_key = Column(String(256), nullable=False, index=True)
     count = Column(Integer, nullable=False, default=1)
-    status = Column(String(24), nullable=False, default="pending")  # pending|auto_promoted|approved|rejected|merged
+    status = Column(
+        String(24), nullable=False, default="pending"
+    )  # pending|auto_promoted|approved|rejected|merged
     threshold = Column(Integer, nullable=False, default=5)
     last_examples_json = Column(JSON, nullable=False, default=list)
     approved_master_item_id = Column(Integer, nullable=True)

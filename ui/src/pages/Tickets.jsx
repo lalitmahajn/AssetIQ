@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "../api";
 
 /* --- HELPER COMPONENTS --- */
@@ -160,10 +160,12 @@ export default function Tickets() {
   const [newTitle, setNewTitle] = useState("");
   const [newAsset, setNewAsset] = useState("");
   const [newPriority, setNewPriority] = useState("MEDIUM");
+  const [newDept, setNewDept] = useState("");
 
   // Suggestion State
   const [assetSuggestions, setAssetSuggestions] = useState([]);
   const [showAssetDrop, setShowAssetDrop] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
 
   // History State
   const [history, setHistory] = useState([]);
@@ -212,21 +214,29 @@ export default function Tickets() {
   async function doCreate(e) {
     e.preventDefault();
     try {
-      await apiPost("/ui/tickets/create", { title: newTitle, asset_id: newAsset, priority: newPriority });
+      await apiPost("/ui/tickets/create", { title: newTitle, asset_id: newAsset, priority: newPriority, dept: newDept });
       setShowCreate(false);
-      setNewTitle(""); setNewAsset("");
+      setNewTitle(""); setNewAsset(""); setNewDept("");
       loadList();
     } catch (e) { setErr(e.message); }
   }
 
   async function searchAssets(q) {
     setNewAsset(q);
-    if (q.length < 2) { setAssetSuggestions([]); setShowAssetDrop(false); return; }
+    if (q.length < 2) { 
+        setAssetSuggestions([]); 
+        setShowAssetDrop(false); 
+        return; 
+    }
+    setIsSearching(true);
     try {
       const r = await apiGet(`/master/assets/list?q=${q}&limit=5`);
       setAssetSuggestions(r || []);
       setShowAssetDrop(true);
-    } catch (e) { }
+    } catch (e) { 
+    } finally {
+        setIsSearching(false);
+    }
   }
 
   if (view === "DETAIL" && selectedTicketId) {
@@ -289,6 +299,12 @@ export default function Tickets() {
                     required
                     autoComplete="off"
                   />
+                  {/* New Asset Indicator */}
+                  {!isSearching && newAsset.length >= 3 && !assetSuggestions.some(a => a.id.toLowerCase() === newAsset.toLowerCase()) && (
+                      <div className="absolute top-1 right-0 text-xs font-medium text-blue-600 animate-pulse">
+                          New Asset being created
+                      </div>
+                  )}
                   {showAssetDrop && assetSuggestions.length > 0 && (
                     <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded-md mt-1 z-10">
                       {assetSuggestions.map(a => (
@@ -317,6 +333,17 @@ export default function Tickets() {
                       <option value="MEDIUM">Medium</option>
                       <option value="HIGH">High</option>
                       <option value="CRITICAL">Critical</option>
+                    </select>
+                  </div>
+                  <div className="flex-1">
+                    <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Department</label>
+                    <select value={newDept} onChange={e => setNewDept(e.target.value)} className="w-full h-10 border border-gray-300 rounded-lg px-4 bg-white">
+                      <option value="">-- Select --</option>
+                      <option value="Maintenance">Maintenance</option>
+                      <option value="Electrical">Electrical</option>
+                      <option value="Mechanical">Mechanical</option>
+                      <option value="Instrumentation">Instrumentation</option>
+                      <option value="Production">Production</option>
                     </select>
                   </div>
                   <button type="submit" className="h-10 bg-green-600 text-white px-6 rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm">
@@ -359,6 +386,7 @@ export default function Tickets() {
               <th className="px-6 py-3">Source</th>
               <th className="px-6 py-3">Asset</th>
               <th className="px-6 py-3">Details</th>
+              <th className="px-6 py-3">Department</th>
               <th className="px-6 py-3">Status</th>
               <th className="px-6 py-3">SLA Due</th>
               <th className="px-6 py-3">Owner</th>
@@ -366,8 +394,8 @@ export default function Tickets() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {loading && <tr><td colSpan={7} className="p-8 text-center text-gray-500">Loading tickets...</td></tr>}
-            {!loading && filteredItems.length === 0 && <tr><td colSpan={7} className="p-8 text-center text-gray-500">No tickets found.</td></tr>}
+            {loading && <tr><td colSpan={8} className="p-8 text-center text-gray-500">Loading tickets...</td></tr>}
+            {!loading && filteredItems.length === 0 && <tr><td colSpan={8} className="p-8 text-center text-gray-500">No tickets found.</td></tr>}
 
             {filteredItems.map(t => (
               <tr key={t.id} className="hover:bg-gray-50 transition-colors group">
@@ -382,6 +410,7 @@ export default function Tickets() {
                     {t.priority}
                   </div>
                 </td>
+                <td className="px-6 py-4 text-sm text-gray-600">{t.assigned_dept || "-"}</td>
                 <td className="px-6 py-4"><StatusBadge s={t.status} /></td>
                 <td className="px-6 py-4 font-mono"><SlaTimer due={t.sla_due_at_utc} /></td>
                 <td className="px-6 py-4 text-sm text-gray-500">

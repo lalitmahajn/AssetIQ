@@ -4,8 +4,8 @@ import os
 from logging.config import fileConfig
 
 from sqlalchemy import engine_from_config, pool
-from alembic import context
 
+from alembic import context
 from common_core.db import Base
 
 # Import models based on MIGRATION_TARGET environment variable
@@ -38,7 +38,9 @@ def get_url() -> str:
 def run_migrations_offline() -> None:
     url = get_url()
     if not url:
-        raise RuntimeError("DATABASE_URL / SQLALCHEMY_DATABASE_URL must be set for Alembic migrations")
+        raise RuntimeError(
+            "DATABASE_URL / SQLALCHEMY_DATABASE_URL must be set for Alembic migrations"
+        )
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -54,7 +56,9 @@ def run_migrations_offline() -> None:
 def run_migrations_online() -> None:
     url = get_url()
     if not url:
-        raise RuntimeError("DATABASE_URL / SQLALCHEMY_DATABASE_URL must be set for Alembic migrations")
+        raise RuntimeError(
+            "DATABASE_URL / SQLALCHEMY_DATABASE_URL must be set for Alembic migrations"
+        )
 
     configuration = config.get_section(config.config_ini_section) or {}
     configuration["sqlalchemy.url"] = url

@@ -3,7 +3,7 @@
 Write-Host "Searching for Plant Backend container..." -ForegroundColor Cyan
 
 # Try to find the container name
-$containerName = docker ps --filter "name=plant_backend" --format "{{.Names}}" | Select-Object -First 1
+$containerName = docker ps --filter "name=plant_backend" --format '{{.Names}}' | Select-Object -First 1
 
 if (-not $containerName) {
     Write-Error "Could not find a running container for 'plant_backend'. Please ensure the Plant Docker stack is running."

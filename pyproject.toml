@@ -3,5 +3,22 @@ line-length = 100
 target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E","F","I","W","B","UP"]
-ignore = ["E501"]
+# Enable rules for: 
+# E, W - pycodestyle
+# F - Pyflakes
+# I - isort (import sorting)
+# B - flake8-bugbear (common design issues)
+# UP - pyupgrade (modern Python syntax)
+# SIM - flake8-simplify (suggest cleaner logic)
+select = ["E", "F", "I", "W", "B", "UP", "SIM"]
+ignore = ["E501"] # Ignore line-length violations (handled by formatter)
+
+[tool.ruff.lint.isort]
+# Group project-specific packages separately
+known-first-party = ["common_core", "apps"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

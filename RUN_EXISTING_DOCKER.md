@@ -26,7 +26,19 @@ cd ../hq
 docker compose -f docker-compose.hq.yml up -d
 ```
 
-## 4. Access URLs
+
+## 4. Run Database Schema Updates (Important)
+Since the containers do not run migrations automatically on startup, you must apply the latest database changes manually to avoid "Failed to fetch" errors.
+
+```powershell
+# For Plant Node
+docker exec plant-plant_backend-1 alembic upgrade head
+
+# For HQ Node
+docker exec hq-hq_backend-1 sh -c "export MIGRATION_TARGET=hq && alembic upgrade head"
+```
+
+## 5. Access URLs
 - **Plant UI**: [http://localhost:5173](http://localhost:5173)
 - **HQ Dashboard**: [http://localhost:8081/hq/ui](http://localhost:8081/hq/ui)
 - **HQ Credentials**: Use the `admin` user and PIN set in `docker/hq/.env`.

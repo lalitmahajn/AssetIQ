@@ -22,8 +22,7 @@ services:
     ports:
       - "${PLANT_PROXY_PORT:-8080}:80"
     depends_on:
-      plant_backend:
-        condition: service_healthy
+      - plant_backend
 
   plant_backend:
     build:
@@ -49,8 +48,7 @@ services:
       HQ_RECEIVER_URL: ${HQ_RECEIVER_URL:-http://hq_backend:8100/sync/receive}
       REPORT_VAULT_ROOT: /data/report_vault
     depends_on:
-      postgres:
-        condition: service_healthy
+      - postgres
     healthcheck:
       test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz').read()" ]
       interval: 30s

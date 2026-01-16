@@ -68,9 +68,16 @@ docker compose -f docker-compose.hq.yml up -d --build
 On a new PC, you must run migrations for **both** Plant and HQ databases to create the tables.
 
 ### Plant Database
-Run this command from the project root:
+Run this command from the project root.
+**Note**: If you encounter an "already exists" error, run the *stamp* command first, then upgrade.
+
 ```bash
-docker exec plant-plant_backend-1 sh -c "export DATABASE_URL=\$PLANT_DB_URL && alembic upgrade head"
+# Option 1: Standard Upgrade (Try this first)
+docker exec plant-plant_backend-1 alembic upgrade head
+
+# Option 2: If Option 1 fails with "Table 'assets' already exists":
+docker exec plant-plant_backend-1 alembic stamp 6d85ac6521e8
+docker exec plant-plant_backend-1 alembic upgrade head
 ```
 
 ### HQ Database

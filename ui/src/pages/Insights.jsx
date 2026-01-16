@@ -1,5 +1,5 @@
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiGet } from "../api";
 import AssetwiseEfficiencyChart from "../components/AssetwiseEfficiencyChart";
 
@@ -59,7 +59,7 @@ export default function Insights() {
         <div className="mb-8">
           <h2 className="text-3xl font-bold text-gray-900 mb-2">Plant Insights</h2>
           <p className="text-gray-500 text-sm">
-            Historical patterns and analysis. Read-only view provided by HQ Intelligence.
+            Real-time asset performance metrics and efficiency breakdown.
           </p>
         </div>
 
