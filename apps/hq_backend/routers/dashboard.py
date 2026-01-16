@@ -1,16 +1,34 @@
-from __future__ import annotations
-
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
+import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from sqlalchemy import select, func, desc
 
 from common_core.db import HQSessionLocal
+from common_core.security import verify_jwt
 from apps.hq_backend.models import PlantRegistry, RollupDaily, TicketSnapshot, StopReasonDaily
 
 router = APIRouter(prefix="/hq", tags=["hq-dashboard"])
+
+
+def _get_current_user(request: Request) -> Dict[str, Any]:
+    token = request.cookies.get("hq_access_token")
+    if not token:
+        # Check Authorization header as fallback for API clients
+        auth_header = request.headers.get("Authorization")
+        if auth_header and auth_header.startswith("Bearer "):
+            token = auth_header[7:]
+    
+    if not token:
+        raise HTTPException(status_code=401, detail="NOT_AUTHENTICATED")
+    
+    try:
+        payload = verify_jwt(token)
+        return payload
+    except Exception:
+        raise HTTPException(status_code=401, detail="INVALID_TOKEN")
 
 
 def _today_utc() -> str:
@@ -18,7 +36,7 @@ def _today_utc() -> str:
 
 
 @router.get("/plants")
-def plants() -> Dict[str, Any]:
+def plants(user: Dict[str, Any] = Depends(_get_current_user)) -> Dict[str, Any]:
     db = HQSessionLocal()
     try:
         rows = db.execute(select(PlantRegistry).order_by(PlantRegistry.site_code)).scalars().all()
@@ -38,7 +56,7 @@ def plants() -> Dict[str, Any]:
 
 
 @router.get("/summary")
-def summary(day_utc: Optional[str] = None) -> Dict[str, Any]:
+def summary(day_utc: Optional[str] = None, user: Dict[str, Any] = Depends(_get_current_user)) -> Dict[str, Any]:
     day = (day_utc or _today_utc())[:10]
     db = HQSessionLocal()
     try:
@@ -90,7 +108,7 @@ def summary(day_utc: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/compare/downtime")
-def compare_downtime(day_utc: Optional[str] = None) -> Dict[str, Any]:
+def compare_downtime(day_utc: Optional[str] = None, user: Dict[str, Any] = Depends(_get_current_user)) -> Dict[str, Any]:
     day = (day_utc or _today_utc())[:10]
     db = HQSessionLocal()
     try:
@@ -106,7 +124,7 @@ def compare_downtime(day_utc: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/rank/sla")
-def rank_sla(day_utc: Optional[str] = None) -> Dict[str, Any]:
+def rank_sla(day_utc: Optional[str] = None, user: Dict[str, Any] = Depends(_get_current_user)) -> Dict[str, Any]:
     day = (day_utc or _today_utc())[:10]
     db = HQSessionLocal()
     try:
@@ -122,7 +140,7 @@ def rank_sla(day_utc: Optional[str] = None) -> Dict[str, Any]:
 
 
 @router.get("/top-reasons")
-def top_reasons(day_utc: Optional[str] = None, limit: int = 5) -> Dict[str, Any]:
+def top_reasons(day_utc: Optional[str] = None, limit: int = 5, user: Dict[str, Any] = Depends(_get_current_user)) -> Dict[str, Any]:
     day = (day_utc or _today_utc())[:10]
     limit = max(1, min(int(limit), 20))
     db = HQSessionLocal()
@@ -146,7 +164,7 @@ def top_reasons(day_utc: Optional[str] = None, limit: int = 5) -> Dict[str, Any]
 
 
 @router.get("/insights")
-def insights(day_utc: Optional[str] = None) -> Dict[str, Any]:
+def insights(day_utc: Optional[str] = None, user: Dict[str, Any] = Depends(_get_current_user)) -> Dict[str, Any]:
     day = (day_utc or _today_utc())[:10]
     db = HQSessionLocal()
     try:
@@ -171,10 +189,94 @@ def insights(day_utc: Optional[str] = None) -> Dict[str, Any]:
         db.close()
 
 
+@router.get("/admin", response_class=HTMLResponse)
+def admin(user: Dict[str, Any] = Depends(_get_current_user)) -> Response:
+    roles = user.get("roles", [])
+    if "admin" not in roles:
+        raise HTTPException(status_code=403, detail="NOT_AUTHORIZED")
+    return HTMLResponse(_ADMIN_HTML, headers={"Cache-Control": "no-store, max-age=0"})
+
+
 @router.get("/ui", response_class=HTMLResponse)
-def ui() -> str:
+def ui(request: Request) -> Response:
+    # Check for token in cookie
+    token = request.cookies.get("hq_access_token")
+    is_authenticated = False
+    roles = []
+    if token:
+        try:
+            payload = verify_jwt(token)
+            is_authenticated = True
+            roles = payload.get("roles", [])
+        except Exception:
+            pass
+    
+    if not is_authenticated:
+        return HTMLResponse(_LOGIN_HTML, headers={"Cache-Control": "no-store, max-age=0"})
+
     # minimal, no-build UI for management (read-only)
-    return _DASHBOARD_HTML
+    html = _DASHBOARD_HTML.replace("/*ROLES_INJECT*/", f"const USER_ROLES = {json.dumps(roles)};")
+    return HTMLResponse(html, headers={"Cache-Control": "no-store, max-age=0"})
+
+
+_LOGIN_HTML = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>HQ Login - AssetIQ</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#0b0f14;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh}
+    .card{background:#111827;border:1px solid #1f2937;border-radius:10px;padding:24px;width:320px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06)}
+    h1{font-size:20px;margin:0 0 20px 0;text-align:center}
+    .field{margin-bottom:16px}
+    label{display:block;font-size:12px;color:#9ca3af;margin-bottom:4px}
+    input{width:100%;background:#0b1220;border:1px solid #1f2937;color:#e6edf3;border-radius:8px;padding:8px;box-sizing:border-box}
+    button{width:100%;background:#2563eb;border:none;color:white;border-radius:8px;padding:10px;cursor:pointer;font-weight:bold;margin-top:12px}
+    button:hover{background:#1d4ed8}
+    .error{color:#f87171;font-size:12px;margin-top:12px;text-align:center;display:none}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>AssetIQ HQ Login</h1>
+    <div class="field">
+      <label>Username</label>
+      <input id="username" type="text" placeholder="e.g. admin"/>
+    </div>
+    <div class="field">
+      <label>PIN</label>
+      <input id="pin" type="password" placeholder="4+ digits"/>
+    </div>
+    <button onclick="doLogin()">Login</button>
+    <div id="error" class="error"></div>
+  </div>
+  <script>
+    async function doLogin(){
+      const username = document.getElementById("username").value.trim();
+      const pin = document.getElementById("pin").value.trim();
+      const err = document.getElementById("error");
+      err.style.display = "none";
+      
+      try {
+        const r = await fetch("/hq/auth/login", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({username, pin})
+        });
+        if (!r.ok) {
+          const detail = await r.json();
+          throw new Error(detail.detail || "Login failed");
+        }
+        window.location.reload();
+      } catch (e) {
+        err.textContent = e.message;
+        err.style.display = "block";
+      }
+    }
+  </script>
+</body>
+</html>"""
 
 
 _DASHBOARD_HTML = """<!doctype html>
@@ -185,7 +287,8 @@ _DASHBOARD_HTML = """<!doctype html>
   <title>AssetIQ HQ Dashboard</title>
   <style>
     body{font-family:Arial,Helvetica,sans-serif;margin:16px;background:#0b0f14;color:#e6edf3}
-    h1{font-size:20px;margin:0 0 12px 0}
+    .header{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+    h1{font-size:20px;margin:0}
     .row{display:flex;gap:12px;flex-wrap:wrap}
     .card{background:#111827;border:1px solid #1f2937;border-radius:10px;padding:12px;min-width:260px;flex:1}
     .muted{color:#9ca3af;font-size:12px}
@@ -203,10 +306,20 @@ _DASHBOARD_HTML = """<!doctype html>
     input::-webkit-calendar-picker-indicator{cursor:pointer}
     button{background:#1f2937;border:1px solid #374151;color:#e6edf3;border-radius:8px;padding:6px 10px;cursor:pointer}
     button:hover{background:#243244}
+    .logout-btn{background:#3b0a0a;border-color:#7f1d1d}
+    .logout-btn:hover{background:#7f1d1d}
+    .admin-btn{background:#4b5563;border:1px solid #374151;color:#e6edf3;border-radius:8px;padding:6px 10px;cursor:pointer;margin-right:8px}
+    .admin-btn:hover{background:#6b7280}
   </style>
 </head>
 <body>
-  <h1>AssetIQ HQ Dashboard (Read-Only)</h1>
+  <div class="header">
+    <h1>AssetIQ HQ Dashboard (Read-Only)</h1>
+    <div>
+      <button id="adminBtn" class="admin-btn" style="display:none" onclick="location.href='/hq/admin'">Admin</button>
+      <button class="logout-btn" onclick="doLogout()">Logout</button>
+    </div>
+  </div>
   <div class="controls">
     <span class="muted">Day (UTC):</span>
     <input id="day" type="date"/>
@@ -244,7 +357,18 @@ _DASHBOARD_HTML = """<!doctype html>
   </div>
 
 <script>
+/*ROLES_INJECT*/
+(function(){
+  if (typeof USER_ROLES !== 'undefined' && USER_ROLES.includes('admin')) {
+    const btn = document.getElementById('adminBtn');
+    if(btn) btn.style.display = 'inline-block';
+  }
+})();
 function esc(s){return String(s??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;")}
+async function doLogout(){
+  await fetch("/hq/auth/logout", {method:"POST"});
+  window.location.reload();
+}
 function pill(status){
   if(status==="ONLINE") return '<span class="pill ok">ONLINE</span>'
   if(status==="OFFLINE") return '<span class="pill bad">OFFLINE</span>'
@@ -257,6 +381,10 @@ async function api(path){
   const day=document.getElementById("day").value
   const url = path.includes("?") ? `${path}&day_utc=${encodeURIComponent(day)}` : `${path}?day_utc=${encodeURIComponent(day)}`
   const r = await fetch(url)
+  if(r.status === 401) {
+    window.location.reload();
+    return;
+  }
   if(!r.ok) throw new Error(await r.text())
   return await r.json()
 }
@@ -373,5 +501,91 @@ function formatDetail(d) {
   loadAll()
 })()
 </script>
+</body>
+</html>"""
+
+
+_ADMIN_HTML = """<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>HQ Admin - AssetIQ</title>
+  <style>
+    body{font-family:Arial,Helvetica,sans-serif;margin:0;background:#0b0f14;color:#e6edf3;display:flex;align-items:center;justify-content:center;height:100vh}
+    .card{background:#111827;border:1px solid #1f2937;border-radius:10px;padding:24px;width:360px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1),0 2px 4px -1px rgba(0,0,0,0.06)}
+    h1{font-size:20px;margin:0 0 20px 0;text-align:center}
+    .field{margin-bottom:16px}
+    label{display:block;font-size:12px;color:#9ca3af;margin-bottom:4px}
+    input{width:100%;background:#0b1220;border:1px solid #1f2937;color:#e6edf3;border-radius:8px;padding:8px;box-sizing:border-box}
+    button{width:100%;background:#2563eb;border:none;color:white;border-radius:8px;padding:10px;cursor:pointer;font-weight:bold;margin-top:12px}
+    button:hover{background:#1d4ed8}
+    .cancel{background:#374151;margin-top:8px}
+    .cancel:hover{background:#4b5563}
+    .error{color:#f87171;font-size:12px;margin-top:12px;text-align:center;display:none}
+    .success{color:#34d399;font-size:12px;margin-top:12px;text-align:center;display:none}
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Create HQ User</h1>
+    <div class="field">
+      <label>Username</label>
+      <input id="username" type="text" placeholder="e.g. operator"/>
+    </div>
+    <div class="field">
+      <label>PIN (min 6 digits)</label>
+      <input id="pin" type="password" placeholder="123456"/>
+    </div>
+    <div class="field">
+      <label>Roles (comma separated)</label>
+      <input id="roles" type="text" value="user" placeholder="admin, user"/>
+    </div>
+    <button onclick="doCreate()">Create User</button>
+    <button class="cancel" onclick="location.href='/hq/ui'">Back to Dashboard</button>
+    <div id="error" class="error"></div>
+    <div id="success" class="success"></div>
+  </div>
+  <script>
+    async function doCreate(){
+      const username = document.getElementById("username").value.trim();
+      const pin = document.getElementById("pin").value.trim();
+      const roles = document.getElementById("roles").value;
+      
+      const err = document.getElementById("error");
+      const succ = document.getElementById("success");
+      err.style.display = "none";
+      succ.style.display = "none";
+      
+      if(!username || !pin){
+        err.textContent = "Username and PIN are required";
+        err.style.display = "block";
+        return;
+      }
+      
+      try {
+        const r = await fetch("/hq/auth/create-user", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({username, pin, roles})
+        });
+        if (r.status === 401) {
+             window.location.href = "/hq/ui"; // Redirect to login page handler
+             return;
+        }
+        if (!r.ok) {
+          const detail = await r.json();
+          throw new Error(detail.detail || "Creation failed");
+        }
+        succ.textContent = `User '${username}' created successfully!`;
+        succ.style.display = "block";
+        document.getElementById("username").value = "";
+        document.getElementById("pin").value = "";
+      } catch (e) {
+        err.textContent = e.message;
+        err.style.display = "block";
+      }
+    }
+  </script>
 </body>
 </html>"""

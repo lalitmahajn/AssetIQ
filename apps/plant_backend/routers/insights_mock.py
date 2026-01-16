@@ -2,7 +2,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import List, Optional
 
-router = APIRouter(prefix="/hq/insights", tags=["hq-insights-mock"])
+router = APIRouter(prefix="/ui/insights", tags=["hq-insights-mock"])
 
 class Insight(BaseModel):
     title: str

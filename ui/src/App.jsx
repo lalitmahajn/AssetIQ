@@ -7,7 +7,7 @@ import Reports from "./pages/Reports";
 import Assets from "./pages/Assets";
 import StopPopup from "./pages/StopPopup";
 import MasterDashboard from "./pages/admin/MasterDashboard";
-import { getToken, parseJwt } from "./api";
+import { getToken, parseJwt, apiGet } from "./api";
 
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken());
@@ -29,6 +29,18 @@ export default function App() {
   }
 
   useEffect(() => {
+    async function fetchSiteCode() {
+      try {
+        const data = await apiGet("/readyz");
+        if (data && data.site_code) {
+          document.title = `AssetIQ - ${data.site_code}`;
+        }
+      } catch (e) {
+        console.error("Failed to fetch site code", e);
+      }
+    }
+    fetchSiteCode();
+
     function onAuthError() {
       handleLogout();
     }

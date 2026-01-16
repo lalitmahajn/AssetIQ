@@ -1,7 +1,7 @@
 
 import React, { useEffect, useState } from "react";
 import { apiGet } from "../api";
-import DowntimeChart from "../components/DowntimeChart";
+import AssetwiseEfficiencyChart from "../components/AssetwiseEfficiencyChart";
 
 function severityRank(s) {
   if (s === "HIGH") return 3;
@@ -17,7 +17,7 @@ export default function Insights() {
     let mounted = true;
     (async () => {
       try {
-        const resp = await apiGet("/hq/insights/overview");
+        const resp = await apiGet("/ui/insights/overview");
         if (mounted) setData(resp);
       } catch (e) {
         if (mounted) setErr(String(e?.message || e));
@@ -69,7 +69,7 @@ export default function Insights() {
           </div>
         )}
 
-        <DowntimeChart />
+        <AssetwiseEfficiencyChart />
 
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 

@@ -43,6 +43,8 @@ services:
       EMAIL_IT: ${EMAIL_IT:-it-alerts@company.com}
       ENABLE_INTELLIGENCE: "true"
       REPORT_VAULT_ROOT: /data/report_vault
+      HQ_BOOTSTRAP_ADMIN_USERNAME: ${HQ_BOOTSTRAP_ADMIN_USERNAME:-}
+      HQ_BOOTSTRAP_ADMIN_PIN: ${HQ_BOOTSTRAP_ADMIN_PIN:-}
     depends_on:
       hq_postgres:
         condition: service_healthy
@@ -54,6 +56,7 @@ services:
     ports:
       - "${HQ_HTTP_PORT:-8100}:8100"
     volumes:
+      - ../../:/app
       - report_vault:/data/report_vault
 
   hq_worker:

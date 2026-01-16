@@ -129,6 +129,9 @@ class InsightDaily(Base):
     detail_json = Column(JSON, nullable=False, default=dict)
     created_at_utc = Column(DateTime, nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint("day_utc", "site_code", "insight_type", "title", name="uq_insight_day_site_type_title"),
-    )
+class HQUser(Base):
+    __tablename__ = "hq_users"
+    username = Column(String(64), primary_key=True)
+    pin_hash = Column(String(128), nullable=False)
+    roles = Column(String(256), nullable=False, default="admin")
+    created_at_utc = Column(DateTime, nullable=False)

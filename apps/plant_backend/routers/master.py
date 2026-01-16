@@ -61,7 +61,7 @@ class AssetItem(BaseModel):
 
 class AssetCreateIn(BaseModel):
     id: str = Field(min_length=1)
-    name: str = Field(min_length=1)
+    name: str = Field(min_length=1, max_length=256)
     parent_id: Optional[str] = None
     asset_type: str = "MACHINE"
     description: Optional[str] = None
@@ -115,7 +115,7 @@ def create_reason(body: ReasonCreateIn, claims=Depends(require_roles("admin"))):
         
         from common_core.config import settings
         new_r = ReasonSuggestion(
-            site_code="P01", # hardcoded as per prev file or fetch env
+            site_code=settings.plant_site_code, # Use settings instead of hardcoded
             suggested_name=body.text,
             normalized_key=body.text.upper(), # simplistic normalization
             # category removed? Model doesn't have it.
@@ -215,7 +215,7 @@ def list_assets(q: Optional[str] = None, limit: int = 50, claims=Depends(require
                 site_code=a.site_code,
                 name=a.name,
                 parent_id=a.parent_id,
-                asset_type=a.asset_type,
+                asset_type=a.category, # Map category back to asset_type for UI compatibility if needed, though AssetItem says asset_type
                 description=a.description,
                 is_active=a.is_active
             ) for a in assets
@@ -234,17 +234,23 @@ def create_asset(body: AssetCreateIn, claims=Depends(require_roles("admin"))):
         new_asset = Asset(
             id=body.id,
             site_code=settings.plant_site_code,
+            asset_code=body.id, # Using ID as asset_code for simplicity
             name=body.name,
+            category=body.asset_type, # Mapping UI's asset_type to database category
             parent_id=body.parent_id,
-            asset_type=body.asset_type,
             description=body.description,
-            created_at_utc=datetime.utcnow()
+            created_at_utc=datetime.utcnow(),
+            is_active=True
         )
         db.add(new_asset)
         db.commit()
         return {"ok": True, "id": new_asset.id}
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         db.close()
+
 
 @router.post("/assets/update")
 def update_asset(body: AssetUpdateIn, claims=Depends(require_roles("admin"))):
@@ -259,6 +265,23 @@ def update_asset(body: AssetUpdateIn, claims=Depends(require_roles("admin"))):
         if body.asset_type is not None: asset.asset_type = body.asset_type
         if body.description is not None: asset.description = body.description
         
+        db.commit()
+        return {"ok": True}
+    finally:
+        db.close()
+
+
+@router.post("/assets/delete")
+def delete_asset(asset_id: str, claims=Depends(require_roles("admin"))):
+    """Soft deletes an asset by setting is_active to False."""
+    db = PlantSessionLocal()
+    try:
+        asset = db.execute(select(Asset).where(Asset.id == asset_id)).scalar_one_or_none()
+        if not asset:
+            raise HTTPException(status_code=404, detail="NOT_FOUND")
+        
+        asset.is_active = False
+        asset.updated_at_utc = datetime.utcnow()
         db.commit()
         return {"ok": True}
     finally:

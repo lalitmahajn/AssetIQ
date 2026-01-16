@@ -362,7 +362,7 @@ def asset_tree(db):
             "category": a.category,
             "children": [build(cid) for cid in children.get(a.id, [])],
         }
-    return build("ROOT")
+    return {"children": build("ROOT")}
 
 # -------------------------
 # Dynamic Masters
@@ -500,32 +500,79 @@ def report_request_create_and_generate_csv(
         vault_root = settings.report_vault_root
         os.makedirs(vault_root, exist_ok=True)
         safe_type = re.sub(r"[^a-zA-Z0-9_\\-]", "_", report_type)[:64]
-        filename = f"report_{safe_type}_{rr.site_code}_{rr.id}.csv"
-        file_path = os.path.join(vault_root, filename)
 
         if report_type == "downtime_by_asset":
-            # Implementation for downtime_by_asset
+            # Generate Excel for downtime_by_asset - shows individual stop records
+            from openpyxl import Workbook
+            from openpyxl.styles import Font, PatternFill, Alignment
+            
+            date_str = f"{dt_from.strftime('%Y%m%d')}_to_{dt_to.strftime('%Y%m%d')}"
+            filename = f"downtime_by_asset_{rr.site_code}_{date_str}.xlsx"
+            file_path = os.path.join(vault_root, filename)
+            
             from sqlalchemy import select
             stops = db.execute(select(StopQueue).where(
                 StopQueue.site_code == rr.site_code,
                 StopQueue.opened_at_utc >= dt_from,
                 StopQueue.opened_at_utc <= dt_to
-            )).scalars().all()
+            ).order_by(StopQueue.opened_at_utc.desc())).scalars().all()
             
-            agg = {}
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Downtime by Asset"
+            
+            # Header styling
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="2563EB", end_color="2563EB", fill_type="solid")
+            
+            # Headers - individual stop records
+            headers = ["Site Code", "Asset ID", "Stop Reason", "Started At", "Ended At", "Duration (Minutes)", "Duration (Hours)", "Status"]
+            for col, header in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=header)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+            
+            # Data rows - individual stops
+            row = 2
             for s in stops:
-                # Calculate duration in seconds
-                end = s.closed_at_utc or dt_to
-                dur = (end - s.opened_at_utc).total_seconds()
-                agg[s.asset_id] = agg.get(s.asset_id, 0.0) + max(0, dur)
+                end_time = s.closed_at_utc
+                if end_time:
+                    dur_sec = (end_time - s.opened_at_utc).total_seconds()
+                    status = "Closed"
+                else:
+                    dur_sec = (dt_to - s.opened_at_utc).total_seconds()
+                    status = "Open"
+                    end_time = None  # Will show as blank
+                
+                ws.cell(row=row, column=1, value=s.site_code)
+                ws.cell(row=row, column=2, value=s.asset_id)
+                ws.cell(row=row, column=3, value=s.reason or "N/A")
+                ws.cell(row=row, column=4, value=s.opened_at_utc.strftime("%Y-%m-%d %H:%M:%S"))
+                ws.cell(row=row, column=5, value=end_time.strftime("%Y-%m-%d %H:%M:%S") if end_time else "Still Open")
+                ws.cell(row=row, column=6, value=round(dur_sec / 60, 1))
+                ws.cell(row=row, column=7, value=round(dur_sec / 3600, 2))
+                ws.cell(row=row, column=8, value=status)
+                row += 1
             
-            with open(file_path, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                w.writerow(["site_code", "date_from", "date_to", "asset_id", "downtime_seconds"])
-                for asset_id, total in sorted(agg.items(), key=lambda x: x[1], reverse=True):
-                    w.writerow([rr.site_code, dt_from.isoformat(), dt_to.isoformat(), asset_id, int(total)])
+            # Auto-width columns
+            for col in ws.columns:
+                max_length = max(len(str(cell.value or "")) for cell in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_length + 2, 35)
+            
+            wb.save(file_path)
+            
         else:
-            # Default summary
+            # Generate PDF for daily_summary
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
+            
+            date_str = f"{dt_from.strftime('%Y%m%d')}_to_{dt_to.strftime('%Y%m%d')}"
+            filename = f"summary_{rr.site_code}_{date_str}.pdf"
+            file_path = os.path.join(vault_root, filename)
+            
             from sqlalchemy import select
             stops = db.execute(select(StopQueue).where(
                 StopQueue.site_code == rr.site_code,
@@ -533,10 +580,64 @@ def report_request_create_and_generate_csv(
                 StopQueue.opened_at_utc <= dt_to
             )).scalars().all()
             
-            with open(file_path, "w", newline="", encoding="utf-8") as f:
-                w = csv.writer(f)
-                w.writerow(["section", "site_code", "date_from", "date_to", "field", "value"])
-                w.writerow(["summary", rr.site_code, dt_from.isoformat(), dt_to.isoformat(), "stops_count", len(stops)])
+            tickets = db.execute(select(Ticket).where(
+                Ticket.site_code == rr.site_code,
+                Ticket.created_at_utc >= dt_from,
+                Ticket.created_at_utc <= dt_to
+            )).scalars().all()
+            
+            # Calculate stats
+            total_stops = len(stops)
+            closed_stops = len([s for s in stops if s.closed_at_utc])
+            open_stops = total_stops - closed_stops
+            total_downtime_min = sum((
+                ((s.closed_at_utc or dt_to) - s.opened_at_utc).total_seconds() / 60
+            ) for s in stops)
+            
+            total_tickets = len(tickets)
+            closed_tickets = len([t for t in tickets if t.status == "CLOSED"])
+            
+            doc = SimpleDocTemplate(file_path, pagesize=A4)
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, textColor=colors.HexColor("#1e40af"))
+            
+            elements = []
+            
+            # Title
+            elements.append(Paragraph(f"Daily Summary Report - {rr.site_code}", title_style))
+            elements.append(Spacer(1, 20))
+            
+            # Date range
+            elements.append(Paragraph(f"<b>Period:</b> {dt_from.strftime('%Y-%m-%d %H:%M')} to {dt_to.strftime('%Y-%m-%d %H:%M')}", styles['Normal']))
+            elements.append(Paragraph(f"<b>Generated:</b> {_now().strftime('%Y-%m-%d %H:%M:%S')} UTC", styles['Normal']))
+            elements.append(Spacer(1, 20))
+            
+            # Summary table
+            summary_data = [
+                ["Metric", "Value"],
+                ["Total Stops", str(total_stops)],
+                ["Open Stops", str(open_stops)],
+                ["Closed Stops", str(closed_stops)],
+                ["Total Downtime (Minutes)", f"{total_downtime_min:.1f}"],
+                ["Total Tickets", str(total_tickets)],
+                ["Closed Tickets", str(closed_tickets)],
+            ]
+            
+            table = Table(summary_data, colWidths=[200, 150])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#2563EB")),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('FONTSIZE', (0, 0), (-1, -1), 11),
+                ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor("#f3f4f6")),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+            ]))
+            elements.append(table)
+            
+            doc.build(elements)
 
         rr.status = "generated"
         rr.generated_file_path = filename

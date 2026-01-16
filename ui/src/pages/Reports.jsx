@@ -9,6 +9,8 @@ export default function Reports() {
     const [reportType, setReportType] = useState("daily_summary");
     const [dateFrom, setDateFrom] = useState(isoToday());
     const [dateTo, setDateTo] = useState(isoToday());
+    const [timeFrom, setTimeFrom] = useState("00:00");
+    const [timeTo, setTimeTo] = useState("23:59");
 
     const [requests, setRequests] = useState([]);
     const [vaultFiles, setVaultFiles] = useState([]);
@@ -39,10 +41,14 @@ export default function Reports() {
         setErr("");
         setLoading(true);
         try {
+            // Combine date and time into ISO datetime strings
+            const fromDateTime = `${dateFrom}T${timeFrom}:00`;
+            const toDateTime = `${dateTo}T${timeTo}:00`;
+
             await apiPost("/reports/request", {
                 report_type: reportType,
-                date_from: dateFrom,
-                date_to: dateTo
+                date_from: fromDateTime,
+                date_to: toDateTime
             });
             await load();
         } catch (e) {
@@ -88,83 +94,85 @@ export default function Reports() {
                     <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
                     Generate Custom Report
                 </h3>
-                <div className="grid md:grid-cols-4 gap-6 items-end">
-                    <div className="space-y-1.5">
+                <div className="grid md:grid-cols-6 gap-4 items-end">
+                    <div className="space-y-1.5 md:col-span-2">
                         <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Report Type</label>
                         <select
                             value={reportType}
                             onChange={e => setReportType(e.target.value)}
                             className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
                         >
-                            <option value="daily_summary">Daily Summary</option>
+                            <option value="daily_summary">Summary Report</option>
                             <option value="downtime_by_asset">Downtime by Asset</option>
                         </select>
                     </div>
                     <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Date From</label>
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">From Date</label>
                         <input
                             type="date"
                             value={dateFrom}
                             onChange={e => setDateFrom(e.target.value)}
-                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
                     <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Date To</label>
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">From Time</label>
+                        <input
+                            type="time"
+                            value={timeFrom}
+                            onChange={e => setTimeFrom(e.target.value)}
+                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">To Date</label>
                         <input
                             type="date"
                             value={dateTo}
                             onChange={e => setDateTo(e.target.value)}
-                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-4 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
                         />
                     </div>
+                    <div className="space-y-1.5">
+                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">To Time</label>
+                        <input
+                            type="time"
+                            value={timeTo}
+                            onChange={e => setTimeTo(e.target.value)}
+                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                    </div>
+                </div>
+                <div className="mt-6 flex items-center gap-4">
                     <button
                         onClick={handleGenerate}
                         disabled={loading}
-                        className="h-11 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
+                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
                     >
-                        {loading ? "Processing..." : "Generate Report"}
+                        {loading && (
+                            <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24">
+                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
+                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                            </svg>
+                        )}
+                        {loading ? "Generating Report..." : "Generate Report"}
                     </button>
+                    {loading && (
+                        <span className="text-sm font-medium text-blue-600 animate-pulse flex items-center gap-2">
+                            Processing... Please wait
+                        </span>
+                    )}
                 </div>
             </div>
 
-            <div className="grid lg:grid-cols-2 gap-8">
-                {/* Recent Requests */}
+            <div className="max-w-4xl">
+                {/* Report Vault */}
                 <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-fit">
-                    <div className="p-5 border-b border-gray-100 bg-gray-50">
-                        <h4 className="font-bold text-gray-700">Request Queue</h4>
-                    </div>
-                    <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
-                        {requests.map(r => (
-                            <div key={r.id} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
-                                <div>
-                                    <div className="text-sm font-bold text-gray-800 uppercase tabular-nums">#{r.id} - {r.report_type.replace(/_/g, ' ')}</div>
-                                    <div className="text-xs text-gray-400 mt-0.5">{r.date_from} to {r.date_to}</div>
-                                </div>
-                                <div className="flex items-center gap-3">
-                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider ${r.status === 'generated' ? 'bg-green-100 text-green-700' :
-                                            r.status === 'failed' ? 'bg-red-100 text-red-700' : 'bg-blue-100 text-blue-700 animate-pulse'
-                                        }`}>
-                                        {r.status}
-                                    </span>
-                                    {r.status === 'generated' && (
-                                        <button onClick={() => download(r)} className="text-blue-600 hover:text-blue-800">
-                                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                        </button>
-                                    )}
-                                </div>
-                            </div>
-                        ))}
-                        {requests.length === 0 && <div className="p-12 text-center text-gray-400 italic">No recent requests.</div>}
-                    </div>
-                </div>
-
-                {/* Vault Files */}
-                <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden h-fit">
-                    <div className="p-5 border-b border-gray-100 bg-gray-50">
+                    <div className="p-5 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                         <h4 className="font-bold text-gray-700">Report Vault</h4>
+                        <span className="text-xs text-gray-400 uppercase font-bold tracking-widest">{vaultFiles.length} Files</span>
                     </div>
-                    <div className="divide-y divide-gray-100 max-h-[400px] overflow-y-auto">
+                    <div className="divide-y divide-gray-100 max-h-[600px] overflow-y-auto">
                         {vaultFiles.map((f, i) => (
                             <div key={i} className="p-4 flex items-center justify-between hover:bg-gray-50 transition-colors">
                                 <div className="flex items-center gap-4">
@@ -173,16 +181,18 @@ export default function Reports() {
                                         {f.type}
                                     </div>
                                     <div>
-                                        <div className="text-sm font-bold text-gray-800 truncate max-w-[180px]">{f.name}</div>
-                                        <div className="text-xs text-gray-400 mt-0.5">{(f.size / 1024).toFixed(1)} KB • {new Date(f.mtime * 1000).toLocaleDateString()}</div>
+                                        <div className="text-sm font-bold text-gray-800 truncate max-w-[400px]">{f.name}</div>
+                                        <div className="text-xs text-gray-400 mt-0.5">{(f.size / 1024).toFixed(1)} KB • {new Date(f.mtime * 1000).toLocaleString()}</div>
                                     </div>
                                 </div>
-                                <button onClick={() => download(f)} className="text-blue-600 hover:text-blue-800">
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-                                </button>
+                                <div className="flex items-center gap-2">
+                                    <button onClick={() => download(f)} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg group transition-all" title="Download">
+                                        <svg className="w-5 h-5 group-hover:scale-110 transition-transform" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                                    </button>
+                                </div>
                             </div>
                         ))}
-                        {vaultFiles.length === 0 && <div className="p-12 text-center text-gray-400 italic">Vault is empty.</div>}
+                        {vaultFiles.length === 0 && <div className="p-12 text-center text-gray-400 italic font-medium">No reports generated yet.</div>}
                     </div>
                 </div>
             </div>

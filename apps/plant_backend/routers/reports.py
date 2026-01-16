@@ -85,8 +85,8 @@ def issue(body: dict, user=Depends(require_perm("report.view"))):
         raise HTTPException(status_code=400, detail="rel_path or report_request_id required")
         
     safe = rel_path.replace("\\","/").lstrip("/")
-    # Check if it's in hot/ archive/ cold/ OR a loose CSV from manual request
-    is_valid_root = (safe.startswith("hot/") or safe.startswith("archive/") or safe.startswith("cold/") or safe.endswith(".csv"))
+    # Check if it's in hot/ archive/ cold/ OR a report file from manual request
+    is_valid_root = (safe.startswith("hot/") or safe.startswith("archive/") or safe.startswith("cold/") or safe.endswith(".csv") or safe.endswith(".pdf") or safe.endswith(".xlsx"))
     if not is_valid_root:
         raise HTTPException(status_code=400, detail="invalid_path")
         

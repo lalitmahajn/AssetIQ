@@ -35,17 +35,14 @@ from apps.plant_backend.routers import assets
 from apps.plant_backend.routers import masters_dynamic
 from apps.plant_backend.routers import suggestions
 from apps.plant_backend.routers import ui_assets
+from apps.plant_backend.routers import efficiency
 
 log = logging.getLogger("assetiq.plant")
 
 app = FastAPI(title="AssetIQ Plant Backend")
-# ...
-app.add_middleware(RequestIdMiddleware)
-# ...
-app.include_router(ui_assets.router)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # For production, this should be restrictive. Using "*" for ease of local run.
+
+app.add_middleware(CORSMiddleware,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -64,6 +61,7 @@ app.include_router(ingest_router)
 app.include_router(stop_queue_router)
 app.include_router(insights_mock.router)
 app.include_router(ui_tickets.router)
+app.include_router(ui_assets.router)
 app.include_router(realtime.router)
 app.include_router(reports.router)
 app.include_router(master_router)
@@ -71,6 +69,8 @@ app.include_router(hq_proxy.router)
 app.include_router(assets.router)
 app.include_router(masters_dynamic.router)
 app.include_router(suggestions.router)
+app.include_router(efficiency.router)
+
 
 
 def _is_weak_pin(pin: str) -> bool:

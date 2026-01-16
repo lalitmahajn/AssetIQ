@@ -26,6 +26,11 @@ cd ../hq
 docker compose -f docker-compose.hq.yml up -d
 ```
 
+## 4. Access URLs
+- **Plant UI**: [http://localhost:5173](http://localhost:5173)
+- **HQ Dashboard**: [http://localhost:8081/hq/ui](http://localhost:8081/hq/ui)
+- **HQ Credentials**: Use the `admin` user and PIN set in `docker/hq/.env`.
+
 ---
 
 ## Troubleshooting & Management

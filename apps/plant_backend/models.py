@@ -129,6 +129,7 @@ class Asset(Base):
     site_code = Column(String(16), nullable=False, index=True)
     asset_code = Column(String(64), nullable=False, index=True) # human readable unique code
     name = Column(String(256), nullable=False)
+    description = Column(Text, nullable=True)  # Added for UI compatibility
     category = Column(String(128), nullable=False)
     parent_id = Column(String(64), nullable=True, index=True)
     criticality = Column(String(32), nullable=False, default="medium")

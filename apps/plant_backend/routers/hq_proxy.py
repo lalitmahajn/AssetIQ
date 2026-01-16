@@ -24,9 +24,14 @@ async def proxy_hq_get(path: str, request: Request):
     # Forward query parameters
     params = dict(request.query_params)
     
+    # Forward Authorization header
+    headers = {}
+    if "authorization" in request.headers:
+        headers["Authorization"] = request.headers["authorization"]
+
     async with httpx.AsyncClient() as client:
         try:
-            resp = await client.get(target_url, params=params, timeout=5.0)
+            resp = await client.get(target_url, params=params, headers=headers, timeout=5.0)
             
             # Forward status code if error
             if resp.status_code >= 400:

@@ -28,11 +28,11 @@ target_metadata = Base.metadata
 
 def get_url() -> str:
     # Prefer explicit SQLALCHEMY_DATABASE_URL, otherwise fall back to env used by services.
-    url = os.environ.get("SQLALCHEMY_DATABASE_URL")
-    if url:
-        return url
-    # Plant/HQ services already expose unified DATABASE_URLs via env in docker-compose.
-    return os.environ.get("DATABASE_URL", "")
+    for env in ["SQLALCHEMY_DATABASE_URL", "DATABASE_URL", "HQ_DB_URL", "PLANT_DB_URL"]:
+        url = os.environ.get(env)
+        if url:
+            return url
+    return ""
 
 
 def run_migrations_offline() -> None:

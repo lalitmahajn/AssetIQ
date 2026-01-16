@@ -45,7 +45,7 @@ def list_assets(user=Depends(require_perm("asset.view"))):
     db = PlantSessionLocal()
     try:
         from apps.plant_backend.models import Asset
-        rows = db.execute(select(Asset).order_by(Asset.asset_code)).scalars().all()
+        rows = db.execute(select(Asset).where(Asset.is_active == True).order_by(Asset.asset_code)).scalars().all()
         return [{"id":r.id, "asset_code":r.asset_code, "name":r.name, "category":r.category} for r in rows]
     finally:
         db.close()

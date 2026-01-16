@@ -46,6 +46,17 @@ export default function AssetManager() {
         setEditing(true);
     }
 
+    async function doDelete(assetId) {
+        if (!confirm(`Are you sure you want to delete asset "${assetId}"?`)) return;
+        setErr("");
+        try {
+            await apiPost(`/master/assets/delete?asset_id=${assetId}`, {});
+            load();
+        } catch (e) {
+            setErr(e.message);
+        }
+    }
+
     return (
         <div className="space-y-6">
             <div className="bg-white p-4 rounded shadow">
@@ -115,8 +126,9 @@ export default function AssetManager() {
                                 <td className="p-3 font-medium">{a.id}</td>
                                 <td className="p-3">{a.name}</td>
                                 <td className="p-3 text-gray-500">{a.parent_id || "-"}</td>
-                                <td className="p-3">
+                                <td className="p-3 space-x-2">
                                     <button onClick={() => edit(a)} className="text-blue-600 hover:underline">Edit</button>
+                                    <button onClick={() => doDelete(a.id)} className="text-red-600 hover:underline">Delete</button>
                                 </td>
                             </tr>
                         ))}

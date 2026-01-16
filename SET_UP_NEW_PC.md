@@ -37,6 +37,11 @@ PLANT_API_BASE=http://<SERVER_IP>:8000
 If you need multi-plant visibility:
 1. Create `docker/hq/.env`
 2. Add similar secrets and `HQ_POSTGRES_PASSWORD`.
+3. Add HQ Dashboard credentials:
+```env
+HQ_BOOTSTRAP_ADMIN_USERNAME=admin
+HQ_BOOTSTRAP_ADMIN_PIN=142536
+```
 
 ## 3. Launching the Services
 
@@ -76,8 +81,9 @@ docker exec hq-hq_backend-1 sh -c "export DATABASE_URL=\$HQ_DB_URL && export MIG
 
 ## 5. First-Time Access
 1. **Plant UI**: [http://localhost:5173](http://localhost:5173)
-2. **HQ Dashboard**: [http://localhost:8081](http://localhost:8081)
-3. **Login**: Use the `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PIN` you set in step 2.
+   - **Login**: Use the `BOOTSTRAP_ADMIN_EMAIL` and `BOOTSTRAP_ADMIN_PIN` set in `docker/plant/.env`.
+2. **HQ Dashboard**: [http://localhost:8081/hq/ui](http://localhost:8081/hq/ui)
+   - **Login**: Use the `HQ_BOOTSTRAP_ADMIN_USERNAME` and `HQ_BOOTSTRAP_ADMIN_PIN` set in `docker/hq/.env`.
 
 ## 6. Verification
 - Go to the **Assets** tab to verify the hierarchy system is working.
