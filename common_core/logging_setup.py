@@ -10,6 +10,7 @@ from typing import Any
 
 request_id_ctx: ContextVar[str] = ContextVar("request_id", default="")
 
+
 class JsonFormatter(logging.Formatter):
     def format(self, record: logging.LogRecord) -> str:
         payload: dict[str, Any] = {
@@ -26,6 +27,7 @@ class JsonFormatter(logging.Formatter):
                 payload[k] = getattr(record, k)
         return json.dumps(payload, ensure_ascii=False)
 
+
 def configure_logging(component: str) -> None:
     level = os.environ.get("LOG_LEVEL", "INFO").upper()
     root = logging.getLogger()
@@ -40,6 +42,8 @@ def configure_logging(component: str) -> None:
     logging.getLogger("uvicorn.error").setLevel(level)
     logging.getLogger("uvicorn.access").setLevel(level)
     logging.getLogger("httpx").setLevel(os.environ.get("HTTPX_LOG_LEVEL", "WARNING").upper())
-    logging.getLogger("sqlalchemy.engine").setLevel(os.environ.get("SQL_LOG_LEVEL", "WARNING").upper())
+    logging.getLogger("sqlalchemy.engine").setLevel(
+        os.environ.get("SQL_LOG_LEVEL", "WARNING").upper()
+    )
 
     logging.getLogger(__name__).info("logging_configured", extra={"component": component})

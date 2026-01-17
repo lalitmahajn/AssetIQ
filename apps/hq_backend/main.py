@@ -1,24 +1,24 @@
 from __future__ import annotations
 
 import logging
-from fastapi import FastAPI
-
 import os
 from datetime import datetime
-from common_core.request_id import RequestIdMiddleware
-from common_core.logging_setup import configure_logging
-from common_core.guardrails import validate_runtime_secrets
-from common_core.config import settings
-from common_core.db import HQSessionLocal, hq_engine
-from apps.hq_backend.models import Base, HQUser
-from common_core.passwords import hash_pin
 
+from fastapi import FastAPI
+
+from apps.hq_backend.models import Base, HQUser
+from apps.hq_backend.routers.auth import router as auth_router
+from apps.hq_backend.routers.dashboard import router as dashboard_router
 from apps.hq_backend.routers.health import router as health_router
 from apps.hq_backend.routers.metrics import router as metrics_router
 from apps.hq_backend.routers.receiver import router as receiver_router
-from apps.hq_backend.routers.dashboard import router as dashboard_router
 from apps.hq_backend.routers.reports import router as reports_router
-from apps.hq_backend.routers.auth import router as auth_router
+from common_core.config import settings
+from common_core.db import HQSessionLocal, hq_engine
+from common_core.guardrails import validate_runtime_secrets
+from common_core.logging_setup import configure_logging
+from common_core.passwords import hash_pin
+from common_core.request_id import RequestIdMiddleware
 
 log = logging.getLogger("assetiq.hq")
 
@@ -50,7 +50,7 @@ def bootstrap_admin():
                 username=username,
                 pin_hash=hash_pin(pin),
                 roles="admin",
-                created_at_utc=datetime.utcnow()
+                created_at_utc=datetime.utcnow(),
             )
             db.add(admin)
             db.commit()

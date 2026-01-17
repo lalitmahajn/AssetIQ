@@ -30,7 +30,7 @@ def get_efficiency_by_asset(days: int = 7, user=Depends(require_perm("stops.view
         )
 
         # Get all assets for reference
-        assets = db.execute(select(Asset).where(Asset.is_active == True)).scalars().all()
+        assets = db.execute(select(Asset).where(Asset.is_active)).scalars().all()
 
         asset_map = {a.id: a for a in assets}
 
@@ -69,7 +69,6 @@ def get_efficiency_by_asset(days: int = 7, user=Depends(require_perm("stops.view
             }
 
         # 2. Recursive Aggregation & Linearization
-        results = []
 
         def process_node(asset_id, level):
             children = children_map.get(asset_id, [])

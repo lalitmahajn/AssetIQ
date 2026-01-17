@@ -2,12 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from sqlalchemy import select, func, desc, and_
+from sqlalchemy import and_, func, select
 
 from common_core.db import HQSessionLocal
-from .models import RollupDaily, StopReasonDaily, TicketSnapshot, InsightDaily
+
+from .models import InsightDaily, RollupDaily, StopReasonDaily, TicketSnapshot
 
 
 @dataclass(frozen=True)
@@ -15,8 +16,8 @@ class Insight:
     insight_type: str
     title: str
     severity: str  # LOW/MEDIUM/HIGH
-    detail: Dict[str, Any]
-    site_code: Optional[str] = None
+    detail: dict[str, Any]
+    site_code: str | None = None
 
 
 def _utc_day(dt: datetime) -> str:
@@ -37,10 +38,12 @@ def compute_insights_from_aggregates(
     site_code: str,
     window_days: int,
     today_utc: str,
-    stop_reason_rows: List[Tuple[str, str, str, int, int]],
-    rollup_rows: List[Tuple[str, str, int, int, int, int, int]],
-    ticket_rows: List[Tuple[str, str, str, str, datetime, Optional[datetime], Optional[datetime], Optional[datetime]]],
-) -> List[Insight]:
+    stop_reason_rows: list[tuple[str, str, str, int, int]],
+    rollup_rows: list[tuple[str, str, int, int, int, int, int]],
+    ticket_rows: list[
+        tuple[str, str, str, str, datetime, datetime | None, datetime | None, datetime | None]
+    ],
+) -> list[Insight]:
     """
     Pure function: compute deterministic, explainable insights from pre-aggregated rows.
 
@@ -53,7 +56,7 @@ def compute_insights_from_aggregates(
     ticket_rows tuples:
       (ticket_id, asset_id, status, priority, created_at_utc, sla_due_at_utc, acknowledged_at_utc, resolved_at_utc)
     """
-    insights: List[Insight] = []
+    insights: list[Insight] = []
 
     # If insufficient data in window, return empty (UI will show "Not enough data yet")
     if not rollup_rows and not stop_reason_rows and not ticket_rows:
@@ -61,8 +64,8 @@ def compute_insights_from_aggregates(
 
     # 1) Repeated stop patterns (7-day window within configured window)
     # Rule: show top reasons with stops >= 5 AND present on >= 3 distinct days.
-    reason_by_code: Dict[str, Dict[str, Any]] = {}
-    for (_sc, day, reason, stops, dt_min) in stop_reason_rows:
+    reason_by_code: dict[str, dict[str, Any]] = {}
+    for _sc, day, reason, stops, dt_min in stop_reason_rows:
         r = reason_by_code.setdefault(reason, {"stops": 0, "downtime_minutes": 0, "days": set()})
         r["stops"] += int(stops or 0)
         r["downtime_minutes"] += int(dt_min or 0)
@@ -98,13 +101,20 @@ def compute_insights_from_aggregates(
         top_loss.append((reason, agg["downtime_minutes"], agg["stops"]))
     top_loss.sort(key=lambda x: x[1], reverse=True)
     if top_loss:
-        top3 = [{"reason_code": r, "downtime_minutes": int(dm), "stops": int(s)} for r, dm, s in top_loss[:5]]
+        top3 = [
+            {"reason_code": r, "downtime_minutes": int(dm), "stops": int(s)}
+            for r, dm, s in top_loss[:5]
+        ]
         insights.append(
             Insight(
                 insight_type="TOP_DOWNTIME_CONTRIBUTORS",
                 title="Insight: Top downtime contributors (by reason)",
                 severity="MEDIUM",
-                detail={"window_days": window_days, "top": top3, "note": "Based on aggregated downtime minutes."},
+                detail={
+                    "window_days": window_days,
+                    "top": top3,
+                    "note": "Based on aggregated downtime minutes.",
+                },
                 site_code=site_code,
             )
         )
@@ -116,7 +126,9 @@ def compute_insights_from_aggregates(
     cut_dt = today_dt - timedelta(days=half)
     prev_cut_dt = today_dt - timedelta(days=window_days)
 
-    def is_breached(created: datetime, due: Optional[datetime], resolved: Optional[datetime], as_of: datetime) -> bool:
+    def is_breached(
+        created: datetime, due: datetime | None, resolved: datetime | None, as_of: datetime
+    ) -> bool:
         if due is None:
             return False
         # breached if resolved after due OR still unresolved after due (as_of)
@@ -126,7 +138,7 @@ def compute_insights_from_aggregates(
 
     cur_breaches = 0
     prev_breaches = 0
-    for (_tid, _aid, _st, _prio, created, due, _ack, resolved) in ticket_rows:
+    for _tid, _aid, _st, _prio, created, due, _ack, resolved in ticket_rows:
         if created >= cut_dt:
             if is_breached(created, due, resolved, today_dt):
                 cur_breaches += 1
@@ -135,12 +147,18 @@ def compute_insights_from_aggregates(
                 prev_breaches += 1
 
     if (cur_breaches + prev_breaches) > 0:
-        direction = "up" if cur_breaches > prev_breaches else ("down" if cur_breaches < prev_breaches else "flat")
+        direction = (
+            "up"
+            if cur_breaches > prev_breaches
+            else ("down" if cur_breaches < prev_breaches else "flat")
+        )
         insights.append(
             Insight(
                 insight_type="SLA_BREACH_TREND",
                 title=f"Insight: SLA breach trend is {direction}",
-                severity="HIGH" if cur_breaches >= 5 else ("MEDIUM" if cur_breaches >= 2 else "LOW"),
+                severity="HIGH"
+                if cur_breaches >= 5
+                else ("MEDIUM" if cur_breaches >= 2 else "LOW"),
                 detail={
                     "window_days": window_days,
                     "recent_days": half,
@@ -154,10 +172,10 @@ def compute_insights_from_aggregates(
         )
 
     # 4) Maintenance delay patterns (ack delays)
-    ack_delays_min: List[int] = []
+    ack_delays_min: list[int] = []
     unresolved = 0
     unacked = 0
-    for (_tid, _aid, status, _prio, created, _due, ack, resolved) in ticket_rows:
+    for _tid, _aid, status, _prio, created, _due, ack, resolved in ticket_rows:
         if status in ("OPEN", "ACK", "ACKNOWLEDGED") and resolved is None:
             unresolved += 1
         if ack is None:
@@ -212,9 +230,7 @@ def recompute_and_store_daily_insights(day_utc: str, window_days: int = 14) -> i
         start_day = _utc_day(start_dt)
 
         # delete existing insights for that day (deterministic refresh)
-        db.execute(
-            InsightDaily.__table__.delete().where(InsightDaily.day_utc == day_utc)
-        )
+        db.execute(InsightDaily.__table__.delete().where(InsightDaily.day_utc == day_utc))
         db.commit()
 
         for site in sites:
@@ -226,8 +242,13 @@ def recompute_and_store_daily_insights(day_utc: str, window_days: int = 14) -> i
                     StopReasonDaily.reason_code,
                     StopReasonDaily.stops,
                     StopReasonDaily.downtime_minutes,
+                ).where(
+                    and_(
+                        StopReasonDaily.site_code == site,
+                        StopReasonDaily.day_utc >= start_day,
+                        StopReasonDaily.day_utc <= day_utc,
+                    )
                 )
-                .where(and_(StopReasonDaily.site_code == site, StopReasonDaily.day_utc >= start_day, StopReasonDaily.day_utc <= day_utc))
             ).all()
 
             # rollups
@@ -240,8 +261,13 @@ def recompute_and_store_daily_insights(day_utc: str, window_days: int = 14) -> i
                     RollupDaily.sla_breaches,
                     RollupDaily.tickets_open,
                     RollupDaily.faults,
+                ).where(
+                    and_(
+                        RollupDaily.site_code == site,
+                        RollupDaily.day_utc >= start_day,
+                        RollupDaily.day_utc <= day_utc,
+                    )
                 )
-                .where(and_(RollupDaily.site_code == site, RollupDaily.day_utc >= start_day, RollupDaily.day_utc <= day_utc))
             ).all()
 
             # tickets
@@ -255,8 +281,11 @@ def recompute_and_store_daily_insights(day_utc: str, window_days: int = 14) -> i
                     TicketSnapshot.sla_due_at_utc,
                     TicketSnapshot.acknowledged_at_utc,
                     TicketSnapshot.resolved_at_utc,
+                ).where(
+                    and_(
+                        TicketSnapshot.site_code == site, TicketSnapshot.created_at_utc >= start_dt
+                    )
                 )
-                .where(and_(TicketSnapshot.site_code == site, TicketSnapshot.created_at_utc >= start_dt))
             ).all()
 
             insights = compute_insights_from_aggregates(
@@ -284,13 +313,21 @@ def recompute_and_store_daily_insights(day_utc: str, window_days: int = 14) -> i
         # global insights: SLA ranking and downtime ranking (top 5)
         # downtime in window
         agg = db.execute(
-            select(RollupDaily.site_code, func.sum(RollupDaily.downtime_minutes), func.sum(RollupDaily.sla_breaches))
+            select(
+                RollupDaily.site_code,
+                func.sum(RollupDaily.downtime_minutes),
+                func.sum(RollupDaily.sla_breaches),
+            )
             .where(and_(RollupDaily.day_utc >= start_day, RollupDaily.day_utc <= day_utc))
             .group_by(RollupDaily.site_code)
         ).all()
         if agg:
-            dt_rank = sorted([(a[0], int(a[1] or 0)) for a in agg], key=lambda x: x[1], reverse=True)[:5]
-            sla_rank = sorted([(a[0], int(a[2] or 0)) for a in agg], key=lambda x: x[1], reverse=True)[:5]
+            dt_rank = sorted(
+                [(a[0], int(a[1] or 0)) for a in agg], key=lambda x: x[1], reverse=True
+            )[:5]
+            sla_rank = sorted(
+                [(a[0], int(a[2] or 0)) for a in agg], key=lambda x: x[1], reverse=True
+            )[:5]
             db.add(
                 InsightDaily(
                     day_utc=day_utc,
@@ -298,7 +335,10 @@ def recompute_and_store_daily_insights(day_utc: str, window_days: int = 14) -> i
                     insight_type="GLOBAL_DOWNTIME_RANKING",
                     title="Insight: Downtime ranking (top plants)",
                     severity="MEDIUM",
-                    detail_json={"window_days": window_days, "top": [{"site_code": s, "downtime_minutes": m} for s, m in dt_rank]},
+                    detail_json={
+                        "window_days": window_days,
+                        "top": [{"site_code": s, "downtime_minutes": m} for s, m in dt_rank],
+                    },
                     created_at_utc=datetime.utcnow(),
                 )
             )
@@ -309,7 +349,10 @@ def recompute_and_store_daily_insights(day_utc: str, window_days: int = 14) -> i
                     insight_type="GLOBAL_SLA_BREACH_RANKING",
                     title="Insight: SLA breach ranking (top plants)",
                     severity="MEDIUM",
-                    detail_json={"window_days": window_days, "top": [{"site_code": s, "sla_breaches": b} for s, b in sla_rank]},
+                    detail_json={
+                        "window_days": window_days,
+                        "top": [{"site_code": s, "sla_breaches": b} for s, b in sla_rank],
+                    },
                     created_at_utc=datetime.utcnow(),
                 )
             )

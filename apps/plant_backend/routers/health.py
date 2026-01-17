@@ -1,15 +1,20 @@
 from __future__ import annotations
-from fastapi import APIRouter
-from sqlalchemy import text
-from common_core.db import PlantSessionLocal
-from common_core.config import settings
+
 import os
 
+from fastapi import APIRouter
+from sqlalchemy import text
+
+from common_core.config import settings
+from common_core.db import PlantSessionLocal
+
 router = APIRouter(tags=["health"])
+
 
 @router.get("/health/live")
 def live():
     return {"ok": True}
+
 
 @router.get("/health/ready")
 def ready():
@@ -34,6 +39,7 @@ def ready():
 @router.get("/healthz")
 def healthz():
     return live()
+
 
 @router.get("/readyz")
 def readyz():

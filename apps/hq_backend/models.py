@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, Integer, String, Text, UniqueConstraint, JSON, Boolean
+from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text, UniqueConstraint
 
 from common_core.db import Base
 
@@ -90,7 +90,9 @@ class StopReasonDaily(Base):
     stops = Column(Integer, nullable=False, default=0)
     downtime_minutes = Column(Integer, nullable=False, default=0)
 
-    __table_args__ = (UniqueConstraint("site_code", "day_utc", "reason_code", name="uq_reason_site_day_reason"),)
+    __table_args__ = (
+        UniqueConstraint("site_code", "day_utc", "reason_code", name="uq_reason_site_day_reason"),
+    )
 
 
 class EmailQueue(Base):
@@ -109,13 +111,17 @@ class ReportJob(Base):
     id = Column(Integer, primary_key=True, autoincrement=True)
     report_type = Column(String(32), nullable=False, index=True)  # DAILY/WEEKLY/MONTHLY
     period_start_utc = Column(String(10), nullable=False)  # YYYY-MM-DD
-    period_end_utc = Column(String(10), nullable=False)    # YYYY-MM-DD inclusive
+    period_end_utc = Column(String(10), nullable=False)  # YYYY-MM-DD inclusive
     file_pdf = Column(String(512), nullable=True)
     file_xlsx = Column(String(512), nullable=True)
     created_at_utc = Column(DateTime, nullable=False)
     updated_at_utc = Column(DateTime, nullable=False)
 
-    __table_args__ = (UniqueConstraint("report_type", "period_start_utc", "period_end_utc", name="uq_report_period"),)
+    __table_args__ = (
+        UniqueConstraint(
+            "report_type", "period_start_utc", "period_end_utc", name="uq_report_period"
+        ),
+    )
 
 
 class InsightDaily(Base):
@@ -128,6 +134,7 @@ class InsightDaily(Base):
     severity = Column(String(16), nullable=False, default="LOW")  # LOW/MEDIUM/HIGH
     detail_json = Column(JSON, nullable=False, default=dict)
     created_at_utc = Column(DateTime, nullable=False)
+
 
 class HQUser(Base):
     __tablename__ = "hq_users"

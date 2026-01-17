@@ -5,8 +5,9 @@ Revises: 0001_initial
 Create Date: 2026-01-08
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0002_timeline_audit_retry"
 down_revision = "0001_initial"
@@ -41,7 +42,9 @@ def upgrade() -> None:
         sa.Column("created_at_utc", sa.DateTime(), nullable=False),
     )
 
-    op.add_column("event_outbox", sa.Column("next_attempt_at_utc", sa.DateTime(), nullable=True, index=True))
+    op.add_column(
+        "event_outbox", sa.Column("next_attempt_at_utc", sa.DateTime(), nullable=True, index=True)
+    )
     op.add_column("event_outbox", sa.Column("last_error", sa.String(length=300), nullable=True))
 
     op.add_column("tickets", sa.Column("acknowledged_at_utc", sa.DateTime(), nullable=True))

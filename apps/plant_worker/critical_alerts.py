@@ -8,6 +8,7 @@ from common_core.config import settings
 
 log = logging.getLogger("assetiq.alerts")
 
+
 def send_critical_alert(subject: str, body: str) -> None:
     if not settings.smtp_host or not settings.email_it:
         log.error("critical_alert", extra={"subject": subject, "component": "plant_worker"})

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import os
 from datetime import datetime
+
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
+from apps.plant_backend.models import User
 from common_core.db import PlantSessionLocal
 from common_core.passwords import hash_pin
-from apps.plant_backend.models import User
 
 router = APIRouter(prefix="/bootstrap", tags=["bootstrap"])
 

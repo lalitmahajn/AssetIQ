@@ -8,6 +8,7 @@ Create Date: 2026-01-08
 from __future__ import annotations
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision = "0003_hq_phase2"
@@ -45,7 +46,7 @@ def upgrade() -> None:
     #     sa.Column("created_at_utc", sa.DateTime(), nullable=False),
     # )
 
-    op.drop_table("rollup_daily") # Re-creating with new schema per 0003
+    op.drop_table("rollup_daily")  # Re-creating with new schema per 0003
     op.create_table(
         "rollup_daily",
         sa.Column("id", sa.Integer(), primary_key=True, autoincrement=True),
@@ -67,7 +68,9 @@ def upgrade() -> None:
         sa.Column("ticket_id", sa.String(length=64), nullable=False, index=True),
         sa.Column("asset_id", sa.String(length=128), nullable=False, index=True),
         sa.Column("title", sa.String(length=256), nullable=False, server_default=""),
-        sa.Column("status", sa.String(length=32), nullable=False, index=True, server_default="OPEN"),
+        sa.Column(
+            "status", sa.String(length=32), nullable=False, index=True, server_default="OPEN"
+        ),
         sa.Column("priority", sa.String(length=32), nullable=False, server_default="MEDIUM"),
         sa.Column("created_at_utc", sa.DateTime(), nullable=False),
         sa.Column("sla_due_at_utc", sa.DateTime(), nullable=True),
@@ -99,7 +102,9 @@ def upgrade() -> None:
         sa.Column("reason_code", sa.String(length=64), nullable=False, index=True),
         sa.Column("stops", sa.Integer(), nullable=False, server_default="0"),
         sa.Column("downtime_minutes", sa.Integer(), nullable=False, server_default="0"),
-        sa.UniqueConstraint("site_code", "day_utc", "reason_code", name="uq_reason_site_day_reason"),
+        sa.UniqueConstraint(
+            "site_code", "day_utc", "reason_code", name="uq_reason_site_day_reason"
+        ),
     )
 
     # op.create_table(
@@ -123,7 +128,9 @@ def upgrade() -> None:
         sa.Column("file_xlsx", sa.String(length=512), nullable=True),
         sa.Column("created_at_utc", sa.DateTime(), nullable=False),
         sa.Column("updated_at_utc", sa.DateTime(), nullable=False),
-        sa.UniqueConstraint("report_type", "period_start_utc", "period_end_utc", name="uq_report_period"),
+        sa.UniqueConstraint(
+            "report_type", "period_start_utc", "period_end_utc", name="uq_report_period"
+        ),
     )
 
 

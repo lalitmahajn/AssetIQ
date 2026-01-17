@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     sync_hmac_kid: str = Field(default="k1", alias="SYNC_HMAC_KID")
 
     # HQ receiver url for Plant -> HQ sync (HQ optional)
-    hq_receiver_url: str = Field(default="http://hq_backend:8001/sync/receive", alias="HQ_RECEIVER_URL")
+    hq_receiver_url: str = Field(
+        default="http://hq_backend:8001/sync/receive", alias="HQ_RECEIVER_URL"
+    )
 
     # Email / SMTP
     smtp_host: str = Field(default="smtp", alias="SMTP_HOST")
@@ -51,7 +53,6 @@ class Settings(BaseSettings):
     report_hot_days: int = Field(default=30, alias="REPORT_HOT_DAYS")
     report_archive_days: int = Field(default=180, alias="REPORT_ARCHIVE_DAYS")
     report_cold_enabled: bool = Field(default=True, alias="REPORT_COLD_ENABLED")
-
 
     # Phase-3 Intelligence (HQ add-on)
     enable_intelligence: bool = Field(default=False, alias="ENABLE_INTELLIGENCE")

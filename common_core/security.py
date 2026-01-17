@@ -1,8 +1,12 @@
 from __future__ import annotations
+
 import time
+from typing import Any
+
 import jwt
-from typing import Any, Dict
+
 from common_core.config import settings
+
 
 def issue_jwt(sub: str, roles: list[str]) -> str:
     now = int(time.time())
@@ -16,7 +20,8 @@ def issue_jwt(sub: str, roles: list[str]) -> str:
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm="HS256")
 
-def verify_jwt(token: str) -> Dict[str, Any]:
+
+def verify_jwt(token: str) -> dict[str, Any]:
     return jwt.decode(
         token,
         settings.jwt_secret,

@@ -6,5 +6,6 @@ ALLOWED_PREFIXES = (
     "/stations/config",
 )
 
+
 def station_allowed(path: str) -> bool:
     return any(path.startswith(p) for p in ALLOWED_PREFIXES)

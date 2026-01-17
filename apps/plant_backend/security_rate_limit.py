@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass
 from threading import Lock
-from typing import Dict, Tuple
+
 
 @dataclass
 class Bucket:
@@ -11,13 +11,14 @@ class Bucket:
     updated_at: float
     blocked_until: float
 
+
 class RateLimiter:
     def __init__(self, capacity: int, refill_per_sec: float, block_seconds: int) -> None:
         self.capacity = float(capacity)
         self.refill_per_sec = float(refill_per_sec)
         self.block_seconds = int(block_seconds)
         self._lock = Lock()
-        self._buckets: Dict[Tuple[str, str], Bucket] = {}
+        self._buckets: dict[tuple[str, str], Bucket] = {}
 
     def allow(self, ip: str, key: str) -> bool:
         now = time.time()
@@ -41,5 +42,6 @@ class RateLimiter:
 
             b.blocked_until = now + self.block_seconds
             return False
+
 
 login_limiter = RateLimiter(capacity=5, refill_per_sec=0.1, block_seconds=60)

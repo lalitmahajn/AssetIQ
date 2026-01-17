@@ -6,13 +6,15 @@ Create Date: 2026-01-08
 
 """
 
-from alembic import op
 import sqlalchemy as sa
+
+from alembic import op
 
 revision = "0001_initial"
 down_revision = None
 branch_labels = None
 depends_on = None
+
 
 def upgrade() -> None:
     op.create_table(
@@ -28,7 +30,9 @@ def upgrade() -> None:
         sa.Column("site_code", sa.String(length=16), nullable=False, index=True),
         sa.Column("asset_id", sa.String(length=128), nullable=False, index=True),
         sa.Column("reason", sa.Text(), nullable=False),
-        sa.Column("is_open", sa.Boolean(), nullable=False, server_default=sa.text("true"), index=True),
+        sa.Column(
+            "is_open", sa.Boolean(), nullable=False, server_default=sa.text("true"), index=True
+        ),
         sa.Column("opened_at_utc", sa.DateTime(), nullable=False),
         sa.Column("closed_at_utc", sa.DateTime(), nullable=True),
         sa.Column("resolution_text", sa.Text(), nullable=True),
@@ -40,7 +44,9 @@ def upgrade() -> None:
         sa.Column("site_code", sa.String(length=16), nullable=False, index=True),
         sa.Column("asset_id", sa.String(length=128), nullable=False, index=True),
         sa.Column("title", sa.String(length=256), nullable=False),
-        sa.Column("status", sa.String(length=32), nullable=False, server_default="OPEN", index=True),
+        sa.Column(
+            "status", sa.String(length=32), nullable=False, server_default="OPEN", index=True
+        ),
         sa.Column("priority", sa.String(length=32), nullable=False, server_default="MEDIUM"),
         sa.Column("assigned_to_user_id", sa.String(length=64), nullable=True),
         sa.Column("created_at_utc", sa.DateTime(), nullable=False),
@@ -67,7 +73,9 @@ def upgrade() -> None:
         sa.Column("to_email", sa.String(length=256), nullable=False, index=True),
         sa.Column("subject", sa.String(length=256), nullable=False),
         sa.Column("body", sa.Text(), nullable=False),
-        sa.Column("status", sa.String(length=32), nullable=False, server_default="PENDING", index=True),
+        sa.Column(
+            "status", sa.String(length=32), nullable=False, server_default="PENDING", index=True
+        ),
         sa.Column("created_at_utc", sa.DateTime(), nullable=False),
         sa.Column("sent_at_utc", sa.DateTime(), nullable=True),
     )
@@ -110,6 +118,7 @@ def upgrade() -> None:
         sa.Column("updated_at_utc", sa.DateTime(), nullable=False),
         sa.UniqueConstraint("site_code", "day_utc", "asset_id", name="uq_rollup"),
     )
+
 
 def downgrade() -> None:
     op.drop_table("rollup_daily")

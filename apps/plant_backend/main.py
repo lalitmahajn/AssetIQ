@@ -2,46 +2,47 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from common_core.request_id import RequestIdMiddleware
-from common_core.logging_setup import configure_logging
-from common_core.guardrails import validate_runtime_secrets
-from common_core.db import PlantSessionLocal
-from common_core.config import settings
-from common_core.passwords import hash_pin
-
-from apps.plant_backend.middleware_station import StationPolicyMiddleware
 from apps.plant_backend import models  # noqa: F401
-
-from apps.plant_backend.routers.health import router as health_router
-from apps.plant_backend.routers.metrics import router as metrics_router
+from apps.plant_backend.middleware_station import StationPolicyMiddleware
+from apps.plant_backend.routers import (
+    assets,
+    efficiency,
+    hq_proxy,
+    insights_mock,
+    masters_dynamic,
+    realtime,
+    reports,
+    suggestions,
+    ui_assets,
+    ui_tickets,
+)
 from apps.plant_backend.routers.auth import router as auth_router
 from apps.plant_backend.routers.bootstrap import router as bootstrap_router
+from apps.plant_backend.routers.health import router as health_router
+from apps.plant_backend.routers.ingest import router as ingest_router
+from apps.plant_backend.routers.master import router as master_router
+from apps.plant_backend.routers.metrics import router as metrics_router
 from apps.plant_backend.routers.stations import router as stations_router
 from apps.plant_backend.routers.stops import router as stops_router
 from apps.plant_backend.routers.tickets import router as tickets_router
-from apps.plant_backend.routers.ingest import router as ingest_router
 from apps.plant_backend.routers.ui_stop_queue import router as stop_queue_router
-from apps.plant_backend.routers import insights_mock
-from apps.plant_backend.routers import ui_tickets
-from apps.plant_backend.routers import realtime
-from apps.plant_backend.routers import reports
-from apps.plant_backend.routers.master import router as master_router
-from apps.plant_backend.routers import hq_proxy
-from apps.plant_backend.routers import assets
-from apps.plant_backend.routers import masters_dynamic
-from apps.plant_backend.routers import suggestions
-from apps.plant_backend.routers import ui_assets
-from apps.plant_backend.routers import efficiency
+from common_core.config import settings
+from common_core.db import PlantSessionLocal
+from common_core.guardrails import validate_runtime_secrets
+from common_core.logging_setup import configure_logging
+from common_core.passwords import hash_pin
+from common_core.request_id import RequestIdMiddleware
 
 log = logging.getLogger("assetiq.plant")
 
 app = FastAPI(title="AssetIQ Plant Backend")
 
-app.add_middleware(CORSMiddleware,
+app.add_middleware(
+    CORSMiddleware,
     allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
@@ -72,9 +73,24 @@ app.include_router(suggestions.router)
 app.include_router(efficiency.router)
 
 
-
 def _is_weak_pin(pin: str) -> bool:
-    weak = {"0000","1111","2222","3333","4444","5555","6666","7777","8888","9999","1234","12345","123456","000000","111111"}
+    weak = {
+        "0000",
+        "1111",
+        "2222",
+        "3333",
+        "4444",
+        "5555",
+        "6666",
+        "7777",
+        "8888",
+        "9999",
+        "1234",
+        "12345",
+        "123456",
+        "000000",
+        "111111",
+    }
     return (not pin) or (pin.strip() in weak) or (len(pin) < 6)
 
 
@@ -87,7 +103,9 @@ def _bootstrap_admin_if_env_present() -> None:
     if not email or not pin:
         raise RuntimeError("BOOTSTRAP_ADMIN_EMAIL and BOOTSTRAP_ADMIN_PIN must both be set")
     if _is_weak_pin(pin):
-        raise RuntimeError("BOOTSTRAP_ADMIN_PIN is too weak (min 6, block common pins like 1234/0000)")
+        raise RuntimeError(
+            "BOOTSTRAP_ADMIN_PIN is too weak (min 6, block common pins like 1234/0000)"
+        )
     if "@" not in email or "." not in email:
         raise RuntimeError("BOOTSTRAP_ADMIN_EMAIL must be a valid email-like value")
 
@@ -103,22 +121,30 @@ def _bootstrap_admin_if_env_present() -> None:
     finally:
         db.close()
 
+
 def _bootstrap_masters() -> None:
     db = PlantSessionLocal()
     try:
-        from apps.plant_backend.models import MasterType
         from datetime import datetime
+
         from sqlalchemy import select
-        existing = db.execute(select(MasterType).where(MasterType.type_code == "STOP_REASON")).scalar_one_or_none()
+
+        from apps.plant_backend.models import MasterType
+
+        existing = db.execute(
+            select(MasterType).where(MasterType.type_code == "STOP_REASON")
+        ).scalar_one_or_none()
         if not existing:
-            db.add(MasterType(
-                site_code=settings.plant_site_code,
-                type_code="STOP_REASON",
-                name="Stop Reasons",
-                description="Master list of downtime reasons",
-                is_active=True,
-                created_at_utc=datetime.utcnow()
-            ))
+            db.add(
+                MasterType(
+                    site_code=settings.plant_site_code,
+                    type_code="STOP_REASON",
+                    name="Stop Reasons",
+                    description="Master list of downtime reasons",
+                    is_active=True,
+                    created_at_utc=datetime.utcnow(),
+                )
+            )
             db.commit()
     finally:
         db.close()
