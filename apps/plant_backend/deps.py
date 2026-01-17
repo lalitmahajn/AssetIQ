@@ -16,8 +16,8 @@ def get_user(creds: HTTPAuthorizationCredentials = Depends(bearer)):
         claims = verify_jwt(creds.credentials)
         roles = claims.get("roles", [])
         return {"sub": claims.get("sub"), "roles": roles}
-    except Exception:
-        raise HTTPException(status_code=401, detail="AUTH_INVALID")
+    except Exception as e:
+        raise HTTPException(status_code=401, detail="AUTH_INVALID") from e
 
 
 def require_perm(perm: str):

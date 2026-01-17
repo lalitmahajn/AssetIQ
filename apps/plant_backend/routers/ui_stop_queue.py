@@ -1,3 +1,5 @@
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy import select
 
@@ -11,7 +13,10 @@ router = APIRouter(prefix="/ui/stop-queue", tags=["ui-stop-queue"])
 
 @router.get("/list")
 def list_stops(
-    status: str = "OPEN", limit: int = 50, offset: int = 0, user=Depends(require_perm("stop.view"))
+    status: str = "OPEN",
+    limit: int = 50,
+    offset: int = 0,
+    user: Annotated[Any, Depends(require_perm("stop.view"))] = None,
 ):
     db = PlantSessionLocal()
     try:
@@ -39,7 +44,11 @@ def list_stops(
 
 
 @router.post("/resolve")
-def resolve(body: dict, request: Request, user=Depends(require_perm("stop.resolve"))):
+def resolve(
+    body: dict,
+    request: Request,
+    user: Annotated[Any, Depends(require_perm("stop.resolve"))] = None,
+):
     stop_queue_id = body.get("stop_queue_id", "")
     resolution_text = body.get("resolution_text", "Resolved")
     if not stop_queue_id:
@@ -60,6 +69,6 @@ def resolve(body: dict, request: Request, user=Depends(require_perm("stop.resolv
         return {"ok": True, "id": sq.id}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()

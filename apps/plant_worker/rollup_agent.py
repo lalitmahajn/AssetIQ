@@ -122,9 +122,7 @@ def compute_rollup_once() -> bool:
 
         # 5. Outbox Logic
         site_code = settings.plant_site_code
-        correlation_id = (
-            f"rollup:{site_code}:{day_utc}"  # One rollup per day per site, updated repeatedly
-        )
+        # correlation_id = f"rollup:{site_code}:{day_utc}" - Superseded by unique_correlation_id below
 
         # Check if we should suppress update?
         # For simplicity, we just push a new event. The Sync Agent handles duplicates if correlation_id matches?

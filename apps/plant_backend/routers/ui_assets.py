@@ -1,3 +1,5 @@
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import select
 
@@ -9,7 +11,11 @@ router = APIRouter(prefix="/ui/assets", tags=["ui-assets"])
 
 
 @router.get("/{asset_id}/history")
-def get_asset_history(asset_id: str, limit: int = 10, user=Depends(require_perm("ticket.view"))):
+def get_asset_history(
+    asset_id: str,
+    limit: int = 10,
+    user: Annotated[Any, Depends(require_perm("ticket.view"))] = None,
+):
     db = PlantSessionLocal()
     try:
         # Fetch events for this asset (STOP, TICKET, etc.)

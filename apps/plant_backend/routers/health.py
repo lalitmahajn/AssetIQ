@@ -29,10 +29,10 @@ def ready():
     test_path = os.path.join(root, ".write_check")
     with open(test_path, "w", encoding="utf-8") as f:
         f.write("ok")
-    try:
+    import contextlib
+
+    with contextlib.suppress(OSError):
         os.remove(test_path)
-    except OSError:
-        pass
     return {"ok": True, "site_code": settings.plant_site_code}
 
 

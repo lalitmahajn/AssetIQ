@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import logging
 import smtplib
 import time
@@ -428,12 +429,10 @@ def main() -> None:
         except Exception:
             log.exception("hq_worker_failed", extra={"component": "hq_worker"})
             # alert IT via smtp if configured
-            try:
+            with contextlib.suppress(Exception):
                 _send_email(
                     settings.email_it, "AssetIQ HQ worker failure", "hq_worker_failed (check logs)"
                 )
-            except Exception:
-                pass
 
         time.sleep(30)
 

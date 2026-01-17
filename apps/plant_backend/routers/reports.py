@@ -42,7 +42,7 @@ def request_manual_report(body: ReportRequestIn, user=Depends(require_perm("repo
         return {"ok": True, "id": rr.id, "status": rr.status}
     except ValueError as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()
 
@@ -117,7 +117,7 @@ def download(token: str):
     try:
         payload = verify_download_token(token)
     except Exception as e:
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=401, detail=str(e)) from e
     rel = payload["rel_path"].replace("\\", "/").lstrip("/")
     full = os.path.normpath(os.path.join(settings.report_vault_root, rel))
     if not full.startswith(os.path.normpath(settings.report_vault_root)):
@@ -132,7 +132,7 @@ def list_vault_files(user=Depends(require_perm("report.view"))):
     root = settings.report_vault_root
     results = []
     if os.path.exists(root):
-        for dirpath, dirnames, filenames in os.walk(root):
+        for dirpath, _, filenames in os.walk(root):
             for f in filenames:
                 if f.lower().endswith((".pdf", ".xlsx", ".csv")):
                     full_path = os.path.join(dirpath, f)

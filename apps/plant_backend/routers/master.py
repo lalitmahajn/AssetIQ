@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -96,11 +97,13 @@ class ReasonMergeIn(BaseModel):
 
 @router.get("/reasons/list", response_model=list[ReasonItem])
 def list_reasons(
-    q: str | None = None, limit: int = 50, claims=Depends(require_roles("admin", "supervisor"))
+    q: str | None = None,
+    limit: int = 50,
+    claims: Annotated[Any, Depends(require_roles("admin", "supervisor"))] = None,
 ):
     db = PlantSessionLocal()
     try:
-        query = select(ReasonSuggestion).where(ReasonSuggestion.is_active == True)
+        query = select(ReasonSuggestion).where(ReasonSuggestion.is_active.is_(True))
         if q:
             query = query.where(ReasonSuggestion.suggested_name.ilike(f"%{q}%"))
 
@@ -121,7 +124,9 @@ def list_reasons(
 
 
 @router.post("/reasons/create")
-def create_reason(body: ReasonCreateIn, claims=Depends(require_roles("admin"))):
+def create_reason(
+    body: ReasonCreateIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None
+):
     db = PlantSessionLocal()
     try:
         # Check dupe?
@@ -147,7 +152,7 @@ def create_reason(body: ReasonCreateIn, claims=Depends(require_roles("admin"))):
 
 
 @router.post("/reasons/delete")
-def delete_reason(id: int, claims=Depends(require_roles("admin"))):
+def delete_reason(id: int, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     db = PlantSessionLocal()
     try:
         r = db.execute(
@@ -164,7 +169,7 @@ def delete_reason(id: int, claims=Depends(require_roles("admin"))):
 
 # 2. User Management
 @router.get("/users/list", response_model=list[UserItem])
-def list_users(claims=Depends(require_roles("admin"))):
+def list_users(claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     db = PlantSessionLocal()
     try:
         users = db.execute(select(User)).scalars().all()
@@ -174,7 +179,7 @@ def list_users(claims=Depends(require_roles("admin"))):
 
 
 @router.post("/users/create")
-def create_user(body: CreateUserIn, claims=Depends(require_roles("admin"))):
+def create_user(body: CreateUserIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     db = PlantSessionLocal()
     try:
         existing = db.execute(select(User).where(User.id == body.username)).scalar_one_or_none()
@@ -191,7 +196,7 @@ def create_user(body: CreateUserIn, claims=Depends(require_roles("admin"))):
 
 # 3. Audit Logs
 @router.get("/audit/list", response_model=list[AuditLogItem])
-def list_audit(limit: int = 50, claims=Depends(require_roles("admin"))):
+def list_audit(limit: int = 50, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     db = PlantSessionLocal()
     try:
         # Fetch latest logs
@@ -199,15 +204,15 @@ def list_audit(limit: int = 50, claims=Depends(require_roles("admin"))):
 
         return [
             AuditLogItem(
-                id=l.id,
-                actor_user_id=l.actor_user_id,
-                action=l.action,
-                entity_type=l.entity_type,
-                entity_id=l.entity_id,
-                created_at_utc=l.created_at_utc.isoformat(),
-                details=str(l.details_json),
+                id=log_item.id,
+                actor_user_id=log_item.actor_user_id,
+                action=log_item.action,
+                entity_type=log_item.entity_type,
+                entity_id=log_item.entity_id,
+                created_at_utc=log_item.created_at_utc.isoformat(),
+                details=str(log_item.details_json),
             )
-            for l in logs
+            for log_item in logs
         ]
     finally:
         db.close()
@@ -218,11 +223,11 @@ def list_audit(limit: int = 50, claims=Depends(require_roles("admin"))):
 def list_assets(
     q: str | None = None,
     limit: int = 50,
-    claims=Depends(require_roles("admin", "supervisor", "operator")),
+    claims: Annotated[Any, Depends(require_roles("admin", "supervisor", "operator"))] = None,
 ):
     db = PlantSessionLocal()
     try:
-        query = select(Asset).where(Asset.is_active == True)
+        query = select(Asset).where(Asset.is_active.is_(True))
         if q:
             # Simple case-insensitive match on ID or Name
             from sqlalchemy import or_
@@ -249,7 +254,9 @@ def list_assets(
 
 
 @router.post("/assets/create")
-def create_asset(body: AssetCreateIn, claims=Depends(require_roles("admin"))):
+def create_asset(
+    body: AssetCreateIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None
+):
     db = PlantSessionLocal()
     try:
         existing = db.execute(select(Asset).where(Asset.id == body.id)).scalar_one_or_none()
@@ -272,13 +279,15 @@ def create_asset(body: AssetCreateIn, claims=Depends(require_roles("admin"))):
         return {"ok": True, "id": new_asset.id}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
     finally:
         db.close()
 
 
 @router.post("/assets/update")
-def update_asset(body: AssetUpdateIn, claims=Depends(require_roles("admin"))):
+def update_asset(
+    body: AssetUpdateIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None
+):
     db = PlantSessionLocal()
     try:
         asset = db.execute(select(Asset).where(Asset.id == body.id)).scalar_one_or_none()
@@ -301,7 +310,7 @@ def update_asset(body: AssetUpdateIn, claims=Depends(require_roles("admin"))):
 
 
 @router.post("/assets/delete")
-def delete_asset(asset_id: str, claims=Depends(require_roles("admin"))):
+def delete_asset(asset_id: str, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     """Soft deletes an asset by setting is_active to False."""
     db = PlantSessionLocal()
     try:
@@ -319,7 +328,7 @@ def delete_asset(asset_id: str, claims=Depends(require_roles("admin"))):
 
 # 5. Advanced User Management
 @router.post("/users/update")
-def update_user(body: UserUpdateIn, claims=Depends(require_roles("admin"))):
+def update_user(body: UserUpdateIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     db = PlantSessionLocal()
     try:
         user = db.execute(select(User).where(User.id == body.username)).scalar_one_or_none()
@@ -338,7 +347,7 @@ def update_user(body: UserUpdateIn, claims=Depends(require_roles("admin"))):
 
 
 @router.post("/users/delete")
-def delete_user(username: str, claims=Depends(require_roles("admin"))):
+def delete_user(username: str, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     db = PlantSessionLocal()
     try:
         user = db.execute(select(User).where(User.id == username)).scalar_one_or_none()
@@ -354,7 +363,9 @@ def delete_user(username: str, claims=Depends(require_roles("admin"))):
 
 # 6. Reason Merge
 @router.post("/reasons/merge")
-def merge_reasons(body: ReasonMergeIn, claims=Depends(require_roles("admin"))):
+def merge_reasons(
+    body: ReasonMergeIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None
+):
     db = PlantSessionLocal()
     try:
         source = db.execute(
@@ -382,7 +393,7 @@ def merge_reasons(body: ReasonMergeIn, claims=Depends(require_roles("admin"))):
 
 # 7. Configuration
 @router.get("/config")
-def get_config(claims=Depends(require_roles("admin"))):
+def get_config(claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     # Fetch from environment
     import os
 

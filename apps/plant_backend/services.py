@@ -603,7 +603,7 @@ def asset_tree(db):
     assets = (
         db.execute(
             select(Asset).where(
-                Asset.site_code == settings.plant_site_code, Asset.is_active == True
+                Asset.site_code == settings.plant_site_code, Asset.is_active.is_(True)
             )
         )
         .scalars()
@@ -641,7 +641,7 @@ def master_type_list(db, include_inactive: bool = False):
 
     q = select(MasterType).where(MasterType.site_code == settings.plant_site_code)
     if not include_inactive:
-        q = q.where(MasterType.is_active == True)
+        q = q.where(MasterType.is_active.is_(True))
     return db.execute(q).scalars().all()
 
 
@@ -775,7 +775,6 @@ def report_request_create_and_generate_csv(
 ) -> ReportRequest:
     import json
     import os
-    import re
 
     from apps.plant_backend.models import StopQueue  # Use StopQueue from models.py
 
@@ -815,7 +814,7 @@ def report_request_create_and_generate_csv(
     try:
         vault_root = settings.report_vault_root
         os.makedirs(vault_root, exist_ok=True)
-        safe_type = re.sub(r"[^a-zA-Z0-9_\\-]", "_", report_type)[:64]
+        # safe_type = re.sub(r"[^a-zA-Z0-9_\\-]", "_", report_type)[:64] # Unused
 
         if report_type == "downtime_by_asset":
             # Generate Excel for downtime_by_asset - shows individual stop records

@@ -142,9 +142,8 @@ def compute_insights_from_aggregates(
         if created >= cut_dt:
             if is_breached(created, due, resolved, today_dt):
                 cur_breaches += 1
-        elif created >= prev_cut_dt:
-            if is_breached(created, due, resolved, cut_dt):
-                prev_breaches += 1
+        elif created >= prev_cut_dt and is_breached(created, due, resolved, cut_dt):
+            prev_breaches += 1
 
     if (cur_breaches + prev_breaches) > 0:
         direction = (

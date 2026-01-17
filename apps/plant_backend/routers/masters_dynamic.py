@@ -15,7 +15,7 @@ router = APIRouter(prefix="/masters-dynamic", tags=["masters-dynamic"])
 def list_types(user=Depends(require_perm("master.view"))):
     db = PlantSessionLocal()
     try:
-        rows = db.execute(select(MasterType).where(MasterType.is_active == True)).scalars().all()
+        rows = db.execute(select(MasterType).where(MasterType.is_active.is_(True))).scalars().all()
         return [{"type_code": r.type_code, "name": r.name} for r in rows]
     finally:
         db.close()
@@ -28,7 +28,7 @@ def list_items(type_code: str, user=Depends(require_perm("master.view"))):
         rows = (
             db.execute(
                 select(MasterItem)
-                .where(MasterItem.master_type_code == type_code, MasterItem.is_active == True)
+                .where(MasterItem.master_type_code == type_code, MasterItem.is_active.is_(True))
                 .order_by(MasterItem.item_code)
             )
             .scalars()

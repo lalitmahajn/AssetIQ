@@ -1,6 +1,8 @@
 from fastapi import APIRouter
 from pydantic import BaseModel
 
+from apps.plant_backend.intelligence_engine import get_insights_for_plant
+
 router = APIRouter(prefix="/ui/insights", tags=["hq-insights-mock"])
 
 
@@ -13,9 +15,6 @@ class Insight(BaseModel):
 
 class InsightResponse(BaseModel):
     items: list[Insight]
-
-
-from apps.plant_backend.intelligence_engine import get_insights_for_plant
 
 
 @router.get("/overview", response_model=InsightResponse)

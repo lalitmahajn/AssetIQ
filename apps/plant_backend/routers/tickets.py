@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 
@@ -16,7 +17,7 @@ router = APIRouter(prefix="/tickets", tags=["tickets"])
 def ack(
     ticket_id: str,
     request: Request,
-    claims=Depends(require_roles("maintenance", "supervisor", "admin")),
+    claims: Annotated[Any, Depends(require_roles("maintenance", "supervisor", "admin"))] = None,
 ):
     db = PlantSessionLocal()
     try:
@@ -33,10 +34,10 @@ def ack(
         }
     except ValueError as e:
         db.rollback()
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         db.rollback()
         log.exception("ticket_ack_failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()

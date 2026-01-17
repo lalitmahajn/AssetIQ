@@ -120,12 +120,10 @@ def compute_insights_from_aggregates(
     cur_breaches = 0
     prev_breaches = 0
     for _tid, _aid, _st, _prio, created, due, _ack, resolved in ticket_rows:
-        if created >= cut_dt:
-            if is_breached(created, due, resolved, today_dt):
-                cur_breaches += 1
-        elif created >= prev_cut_dt:
-            if is_breached(created, due, resolved, cut_dt):
-                prev_breaches += 1
+        if created >= cut_dt and is_breached(created, due, resolved, today_dt):
+            cur_breaches += 1
+        elif created >= prev_cut_dt and is_breached(created, due, resolved, cut_dt):
+            prev_breaches += 1
 
     if (cur_breaches + prev_breaches) > 0:
         direction = (

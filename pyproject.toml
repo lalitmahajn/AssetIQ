@@ -10,8 +10,9 @@ target-version = "py311"
 # B - flake8-bugbear (common design issues)
 # UP - pyupgrade (modern Python syntax)
 # SIM - flake8-simplify (suggest cleaner logic)
-select = ["E", "F", "I", "W", "B", "UP", "SIM"]
-ignore = ["E501"] # Ignore line-length violations (handled by formatter)
+# Added 'ASYNC' for FastAPI/AsyncIO best practices
+select = ["E", "F", "I", "W", "B", "UP", "SIM", "ASYNC"]
+ignore = ["E501", "B008"] # Relaxed B008 to allow standard FastAPI Depends syntax
 
 [tool.ruff.lint.isort]
 # Group project-specific packages separately

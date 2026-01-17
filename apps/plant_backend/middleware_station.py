@@ -16,7 +16,7 @@ class StationPolicyMiddleware(BaseHTTPMiddleware):
             parts = token.split("-")
             # Format: s-<code->secret>
             if len(parts) >= 3:
-                station_code = parts[1]
+                # parts[1] is the station_code
                 # For high-perf, we might cache this. For now, DB check.
                 # NOTE: Since this is middleware, we need a fresh session.
                 # Ideally, we'd use a dependency, but middleware runs before routing.

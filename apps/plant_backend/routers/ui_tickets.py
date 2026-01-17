@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
@@ -31,7 +32,7 @@ def list_tickets(
     status: str = "OPEN",
     limit: int = 50,
     offset: int = 0,
-    user=Depends(require_perm("ticket.view")),
+    user: Annotated[dict, Depends(require_perm("ticket.view"))] = None,
 ):
     db = PlantSessionLocal()
     try:
@@ -64,7 +65,7 @@ def list_tickets(
 
 
 @router.post("/create")
-def create(body: dict, user=Depends(require_perm("ticket.create"))):
+def create(body: dict, user: Annotated[dict, Depends(require_perm("ticket.create"))] = None):
     title = body.get("title", "")
     asset_id = body.get("asset_id", "")
     priority = body.get("priority", "MEDIUM")
@@ -89,13 +90,13 @@ def create(body: dict, user=Depends(require_perm("ticket.create"))):
         return {"ok": True, "id": t.id}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()
 
 
 @router.post("/close")
-def close(body: dict, user=Depends(require_perm("ticket.close"))):
+def close(body: dict, user: Annotated[dict, Depends(require_perm("ticket.close"))] = None):
     ticket_id = body.get("ticket_id", "")
     close_note = body.get("close_note", "Closed")
     if not ticket_id:
@@ -115,14 +116,14 @@ def close(body: dict, user=Depends(require_perm("ticket.close"))):
         return {"ok": True, "id": t.id}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()
 
 
 @router.post("/assign")
 def assign(
-    body: dict, user=Depends(require_perm("ticket.create"))
+    body: dict, user: Annotated[dict, Depends(require_perm("ticket.create"))] = None
 ):  # Reusing create perm for now or ticket.assign if exists
     ticket_id = body.get("ticket_id")
     username = body.get("username")
@@ -138,14 +139,14 @@ def assign(
         return {"ok": True}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()
 
 
 @router.post("/acknowledge")
 def acknowledge(
-    body: dict, user=Depends(require_perm("ticket.create"))
+    body: dict, user: Annotated[dict, Depends(require_perm("ticket.create"))] = None
 ):  # Use create perm or new one
     ticket_id = body.get("ticket_id")
     username = body.get("username", "USER")
@@ -160,13 +161,13 @@ def acknowledge(
         return {"ok": True, "status": t.status}
     except Exception as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()
 
 
 @router.get("/{ticket_id}/details")
-def get_details(ticket_id: str, user=Depends(require_perm("ticket.view"))):
+def get_details(ticket_id: str, user: Annotated[dict, Depends(require_perm("ticket.view"))] = None):
     db = PlantSessionLocal()
     try:
         t = db.get(Ticket, ticket_id)

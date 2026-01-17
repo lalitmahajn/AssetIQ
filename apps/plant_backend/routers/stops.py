@@ -49,7 +49,7 @@ def manual_open(
     except Exception as e:
         db.rollback()
         log.exception("manual_open_failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()
 
@@ -85,10 +85,10 @@ def resolve(
         }
     except ValueError as e:
         db.rollback()
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from e
     except Exception as e:
         db.rollback()
         log.exception("resolve_failed")
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()

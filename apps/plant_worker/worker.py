@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import time
 
+from apps.plant_worker.critical_alerts import send_critical_alert
 from apps.plant_worker.email_sender import send_pending
 from apps.plant_worker.report_archiver import run_once as archive_once
 from apps.plant_worker.report_scheduler import run_once as check_reports_once
@@ -51,10 +52,9 @@ def main() -> None:
 
         try:
             now = time.time()
-            if now - last_rollup > 60:
-                if compute_rollup_once():
-                    last_rollup = now
-                    log.info("rollup_computed", extra={"component": "plant_worker"})
+            if now - last_rollup > 60 and compute_rollup_once():
+                last_rollup = now
+                log.info("rollup_computed", extra={"component": "plant_worker"})
         except Exception as e:
             log.error("rollup_failed", extra={"err": str(e)})
 

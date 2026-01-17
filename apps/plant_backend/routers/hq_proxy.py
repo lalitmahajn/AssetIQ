@@ -41,4 +41,4 @@ async def proxy_hq_get(path: str, request: Request):
 
         except httpx.RequestError as exc:
             print(f"HQ Proxy Error: {exc}")
-            raise HTTPException(status_code=502, detail="HQ Connection Failed")
+            raise HTTPException(status_code=502, detail="HQ Connection Failed") from exc

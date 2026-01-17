@@ -64,9 +64,9 @@ def ingest_event(body: IngestEvent, request: Request):
 
         db.commit()
         return {"ok": True, "dedup": False}
-    except Exception:
+    except Exception as e:
         db.rollback()
         log.exception("ingest_failed")
-        raise HTTPException(status_code=400, detail="INGEST_FAILED")
+        raise HTTPException(status_code=400, detail="INGEST_FAILED") from e
     finally:
         db.close()

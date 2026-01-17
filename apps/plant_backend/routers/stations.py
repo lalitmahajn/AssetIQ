@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from apps.plant_backend.security_deps import require_roles
 from common_core.db import PlantSessionLocal
@@ -24,7 +27,9 @@ class StationRegisterIn(BaseModel):
 
 
 @router.post("/register")
-def register(body: StationRegisterIn, claims=Depends(require_roles("admin"))):
+def register(
+    body: StationRegisterIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None
+):
     db = PlantSessionLocal()
     try:
         from datetime import datetime
@@ -61,6 +66,6 @@ def register(body: StationRegisterIn, claims=Depends(require_roles("admin"))):
 
 
 @router.post("/rotate-secret")
-def rotate(body: StationRegisterIn, claims=Depends(require_roles("admin"))):
+def rotate(body: StationRegisterIn, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     # Same logic as register for now, effectively resets secret
     return register(body, claims)

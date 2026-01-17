@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Annotated, Any
+
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import select
@@ -22,7 +24,7 @@ class AssetCreateIn(BaseModel):
 
 
 @router.post("/create")
-def create(body: AssetCreateIn, user=Depends(require_perm("asset.manage"))):
+def create(body: AssetCreateIn, user: Annotated[Any, Depends(require_perm("asset.manage"))] = None):
     db = PlantSessionLocal()
     try:
         a = asset_create(db, body.dict(), user["sub"], None)
@@ -30,13 +32,13 @@ def create(body: AssetCreateIn, user=Depends(require_perm("asset.manage"))):
         return {"ok": True, "id": a.id}
     except ValueError as e:
         db.rollback()
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400, detail=str(e)) from e
     finally:
         db.close()
 
 
 @router.get("/tree")
-def tree(user=Depends(require_perm("asset.view"))):
+def tree(user: Annotated[Any, Depends(require_perm("asset.view"))] = None):
     db = PlantSessionLocal()
     try:
         return asset_tree(db)
@@ -45,13 +47,13 @@ def tree(user=Depends(require_perm("asset.view"))):
 
 
 @router.get("/list")
-def list_assets(user=Depends(require_perm("asset.view"))):
+def list_assets(user: Annotated[Any, Depends(require_perm("asset.view"))] = None):
     db = PlantSessionLocal()
     try:
         from apps.plant_backend.models import Asset
 
         rows = (
-            db.execute(select(Asset).where(Asset.is_active == True).order_by(Asset.asset_code))
+            db.execute(select(Asset).where(Asset.is_active.is_(True)).order_by(Asset.asset_code))
             .scalars()
             .all()
         )

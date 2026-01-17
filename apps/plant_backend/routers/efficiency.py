@@ -105,17 +105,8 @@ def get_efficiency_by_asset(days: int = 7, user=Depends(require_perm("stops.view
                     final_stats["efficiency_pct"] = round(avg_eff, 1)
 
             # Add to result list (DFS Order)
-            asset_obj = asset_map[asset_id]
-            item = {
-                "asset_id": asset_id,
-                "asset_code": asset_obj.asset_code or asset_id,
-                "asset_name": asset_obj.name,
-                "efficiency_pct": final_stats["efficiency_pct"],
-                "downtime_minutes": final_stats["downtime_minutes"],
-                "uptime_minutes": final_stats["uptime_minutes"],
-                "level": level,
-                "is_parent": bool(children),
-            }
+            # asset_obj = asset_map[asset_id]
+            # item = { ... } - Unused recursion helper leftovers
             # We append to results list here? No, recursive function usually constructs/returns.
             # But we want a flat list.
             # Actually, because we need to return stats for the parent computation,

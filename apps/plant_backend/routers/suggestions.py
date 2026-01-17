@@ -43,7 +43,7 @@ def approve(body: dict, user=Depends(require_perm("master.manage"))):
         raise HTTPException(status_code=400, detail="suggestion_id and item_code required")
     db = PlantSessionLocal()
     try:
-        s = suggestion_approve(db, sid, code, user["sub"])
+        suggestion_approve(db, sid, code, user["sub"])
         db.commit()
         return {"ok": True}
     finally:
