@@ -53,6 +53,7 @@ class Settings(BaseSettings):
     report_hot_days: int = Field(default=30, alias="REPORT_HOT_DAYS")
     report_archive_days: int = Field(default=180, alias="REPORT_ARCHIVE_DAYS")
     report_cold_enabled: bool = Field(default=True, alias="REPORT_COLD_ENABLED")
+    report_retention_days: int = Field(default=30, alias="REPORT_RETENTION_DAYS")
 
     # Phase-3 Intelligence (HQ add-on)
     enable_intelligence: bool = Field(default=False, alias="ENABLE_INTELLIGENCE")

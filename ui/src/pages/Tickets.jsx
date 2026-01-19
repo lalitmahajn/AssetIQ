@@ -1,6 +1,8 @@
 
 import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "../api";
+import AssetHistoryView from "../components/AssetHistoryView"; // Import shared component
+import ClosedTickets from "./ClosedTickets";
 
 /* --- HELPER COMPONENTS --- */
 
@@ -28,8 +30,21 @@ function SlaTimer({ due }) {
     return () => clearInterval(i);
   }, [due]);
 
-  if (!due) return <span className="text-gray-400 text-xs">No SLA</span>;
-  return <span className={`text-xs ${color}`}>{rem}</span>;
+  if (!due) return <span className="text-gray-400 text-sm">No SLA</span>;
+  return <span className={`text-sm ${color} font-bold`}>{rem}</span>;
+}
+
+function timeAgo(dateStr) {
+    if (!dateStr) return "-";
+    const diff = new Date() - new Date(dateStr);
+    const mins = Math.floor(diff / 60000);
+    const hrs = Math.floor(mins / 60);
+    const days = Math.floor(hrs / 24);
+
+    if (days > 0) return `${days}d ago`;
+    if (hrs > 0) return `${hrs}h ago`;
+    if (mins > 0) return `${mins}m ago`;
+    return "Just now";
 }
 
 function SourceIcon({ source }) {
@@ -58,94 +73,11 @@ function StatusBadge({ s }) {
   return <span className={`px-2 py-1 rounded text-xs font-bold tracking-wide ${map[s] || "bg-gray-100"}`}>{s}</span>;
 }
 
-function AssetHistoryView({ assetId, onBack }) {
-  const [history, setHistory] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    const load = async () => {
-      try {
-        const h = await apiGet(`/ui/assets/${assetId}/history?limit=20`);
-        setHistory(h || []);
-      } catch (e) { }
-      finally { setLoading(false); }
-    };
-    load();
-  }, [assetId]);
-
-  const renderPayload = (payload) => {
-    if (!payload) return null;
-    return (
-      <div className="mt-2 grid grid-cols-2 gap-2 text-xs bg-gray-50 p-2 rounded border border-gray-100">
-        {Object.entries(payload).map(([key, val]) => (
-          <div key={key} className="flex flex-col">
-            <span className="text-gray-400 uppercase font-bold text-[10px]">{key.replace(/_/g, ' ')}</span>
-            <span className="text-gray-700 font-medium">{String(val)}</span>
-          </div>
-        ))}
-      </div>
-    );
-  };
-
-  return (
-    <div className="space-y-6 animate-fade-in">
-      <div className="flex items-center justify-between">
-        <div>
-          <button onClick={onBack} className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-sm font-medium mb-1">
-            &larr; Back to Tickets
-          </button>
-          <h2 className="text-2xl font-bold text-gray-800">Asset History: <span className="text-blue-600">{assetId}</span></h2>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-        <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-          <span className="text-sm font-bold text-gray-500 uppercase">Recent Activity Log</span>
-          <span className="text-xs text-gray-400">{history.length} events found</span>
-        </div>
-
-        <div className="divide-y divide-gray-100">
-          {loading && <div className="p-12 text-center text-gray-500">Loading comprehensive history...</div>}
-          {!loading && history.length === 0 && <div className="p-12 text-center text-gray-500 italic">No historical events recorded for this asset.</div>}
-
-          {history.map(h => (
-            <div key={h.id} className="p-6 hover:bg-gray-50 transition-colors">
-              <div className="flex items-start gap-4">
-                <div className={`mt-1 w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 font-bold text-lg
-                  ${h.type.includes('STOP') ? 'bg-red-100 text-red-600' : 'bg-blue-100 text-blue-600'}`}>
-                  {h.type.includes('STOP') ? 'S' : 'T'}
-                </div>
-                <div className="flex-1">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <h4 className="font-bold text-gray-900 text-lg uppercase tracking-tight">{h.type.replace(/_/g, ' ')}</h4>
-                      <p className="text-sm text-gray-500 font-medium">{new Date(h.occurred_at).toLocaleDateString()} &bull; {new Date(h.occurred_at).toLocaleTimeString()}</p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest
-                      ${h.type.includes('STOP') ? 'bg-red-50 text-red-700' : 'bg-blue-50 text-blue-700'}`}>
-                      {h.type.split('_')[0]}
-                    </span>
-                  </div>
-
-                  <div className="mt-3 text-gray-700 font-medium">
-                    {h.payload.title || h.payload.reason || "Automatic System Log"}
-                  </div>
-
-                  {renderPayload(h.payload)}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 /* --- MAIN COMPONENT --- */
 
 export default function Tickets() {
-  const [view, setView] = useState("LIST"); // LIST | DETAIL | HISTORY
+  const [view, setView] = useState("LIST"); // LIST | DETAIL | HISTORY | CLOSED_LIST
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [selectedAssetId, setSelectedAssetId] = useState(null);
 
@@ -161,6 +93,17 @@ export default function Tickets() {
   const [newAsset, setNewAsset] = useState("");
   const [newPriority, setNewPriority] = useState("MEDIUM");
   const [newDept, setNewDept] = useState("");
+
+  // Filters
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    source: "",
+    asset_id: "",
+    dept: "",
+    status: "",
+    sla: "", // BREACHED, WARNING, OK
+    owner: "" // Text search
+  });
 
   // Suggestion State
   const [assetSuggestions, setAssetSuggestions] = useState([]);
@@ -206,9 +149,33 @@ export default function Tickets() {
   useEffect(() => { loadList(); }, []);
 
   // Filtered Items
-  const filteredItems = myTasksOnly
-    ? items.filter(i => i.assigned_to === currentUser)
-    : items;
+  const filteredItems = items.filter(t => {
+      // 1. My Tasks
+      if (myTasksOnly && t.assigned_to !== currentUser) return false;
+      
+      // 2. Filters
+      if (filters.source && t.source !== filters.source) return false;
+      if (filters.asset_id && !t.asset_id.toLowerCase().includes(filters.asset_id.toLowerCase())) return false;
+      if (filters.dept && t.assigned_dept !== filters.dept) return false;
+      if (filters.status && t.status !== filters.status) return false;
+      if (filters.owner && !(t.assigned_to || "").toLowerCase().includes(filters.owner.toLowerCase())) return false;
+
+      if (filters.sla) {
+        // Compute SLA state locally to match Timer logic roughly
+        const due = t.sla_due_at_utc ? new Date(t.sla_due_at_utc) : null;
+        if (!due) return false; // Can't filter by SLA if no SLA
+        const now = new Date();
+        const diff = due - now;
+        
+        let state = "OK";
+        if (diff <= 0) state = "BREACHED";
+        else if (diff < 3600000) state = "WARNING"; // < 1hr
+
+        if (filters.sla !== state) return false;
+      }
+
+      return true;
+  });
 
   // Handlers
   async function doCreate(e) {
@@ -254,6 +221,14 @@ export default function Tickets() {
     />;
   }
 
+  if (view === "CLOSED_LIST") {
+    return <ClosedTickets
+      onBack={() => { setView("LIST"); loadList(); }}
+      onOpenTicket={(id) => { setSelectedTicketId(id); setView("DETAIL"); }}
+      onOpenHistory={(assetId) => { setSelectedAssetId(assetId); setView("HISTORY"); }}
+    />;
+  }
+
   return (
     <div className="space-y-6">
       {/* HEADER */}
@@ -267,9 +242,18 @@ export default function Tickets() {
             </label>
             <span className="text-gray-300">|</span>
             <span className="text-sm text-gray-500">{filteredItems.length} open tickets</span>
+            <span className="text-sm text-gray-500">{filteredItems.length} open tickets</span>
           </div>
         </div>
         <div className="flex gap-2">
+          <button onClick={() => setShowFilters(!showFilters)} className={`border hover:bg-gray-50 text-gray-700 py-2 px-3 rounded-lg flex items-center gap-2 transition-colors ${showFilters ? 'bg-blue-50 border-blue-200 text-blue-700' : 'bg-white border-gray-300'}`}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
+            Filters
+          </button>
+          <button onClick={() => setView("CLOSED_LIST")} className="bg-white border border-gray-300 hover:bg-gray-50 text-gray-700 py-2 px-4 rounded-lg shadow-sm transition-colors flex items-center gap-2">
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4" /></svg>
+            Closed Tickets
+          </button>
           <button onClick={() => setShowCreate(!showCreate)} className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm transition-colors">
             + New Ticket
           </button>
@@ -278,6 +262,60 @@ export default function Tickets() {
           </button>
         </div>
       </div>
+      
+      {/* FILTER BAR */}
+      {showFilters && (
+        <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fade-in-down grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div>
+                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Source</label>
+                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.source} onChange={e => setFilters({...filters, source: e.target.value})}>
+                    <option value="">All Sources</option>
+                    <option value="MANUAL">Manual</option>
+                    <option value="AUTO">System</option>
+                </select>
+            </div>
+            <div>
+                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Asset ID</label>
+                <input className="w-full text-sm border-gray-300 rounded-md" placeholder="Search..." value={filters.asset_id} onChange={e => setFilters({...filters, asset_id: e.target.value})} />
+            </div>
+            <div>
+                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Department</label>
+                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.dept} onChange={e => setFilters({...filters, dept: e.target.value})}>
+                    <option value="">All Depts</option>
+                    <option value="Maintenance">Maintenance</option>
+                    <option value="Electrical">Electrical</option>
+                    <option value="Mechanical">Mechanical</option>
+                    <option value="Instrumentation">Instrumentation</option>
+                    <option value="Production">Production</option>
+                </select>
+            </div>
+            <div>
+                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Status</label>
+                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}>
+                    <option value="">All Active</option>
+                    <option value="OPEN">Open</option>
+                    <option value="ACK">Acknowledged</option>
+                </select>
+            </div>
+             <div>
+                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">SLA State</label>
+                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.sla} onChange={e => setFilters({...filters, sla: e.target.value})}>
+                    <option value="">All States</option>
+                    <option value="BREACHED">Breached</option>
+                    <option value="WARNING">Warning</option>
+                    <option value="OK">On Track</option>
+                </select>
+            </div>
+             <div>
+                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Owner</label>
+                <input className="w-full text-sm border-gray-300 rounded-md" placeholder="Search owner..." value={filters.owner} onChange={e => setFilters({...filters, owner: e.target.value})} />
+            </div>
+            {/* Clear Filters */}
+            <div className="col-span-full flex justify-end">
+                <button onClick={() => setFilters({source: "", asset_id: "", dept: "", status: "", sla: "", owner: ""})} className="text-xs text-red-600 hover:underline font-medium">Clear Filters</button>
+            </div>
+        </div>
+      )}
 
       {err && <div className="p-4 bg-red-50 text-red-700 rounded-lg border border-red-200">{err}</div>}
 
@@ -386,6 +424,7 @@ export default function Tickets() {
               <th className="px-6 py-3">Source</th>
               <th className="px-6 py-3">Asset</th>
               <th className="px-6 py-3">Details</th>
+              <th className="px-6 py-3">Created</th>
               <th className="px-6 py-3">Department</th>
               <th className="px-6 py-3">Status</th>
               <th className="px-6 py-3">SLA Due</th>
@@ -409,6 +448,14 @@ export default function Tickets() {
                   <div className={`text-xs inline-block mt-1 px-1.5 rounded ${t.priority === 'HIGH' ? 'bg-red-100 text-red-700' : t.priority === 'CRITICAL' ? 'bg-red-800 text-white' : 'bg-gray-100 text-gray-500'}`}>
                     {t.priority}
                   </div>
+                </td>
+                <td className="px-6 py-4">
+                    <div className="text-gray-900 font-medium text-sm">
+                        {new Date(t.created_at_utc).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'})}
+                    </div>
+                    <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                        {timeAgo(t.created_at_utc)}
+                    </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">{t.assigned_dept || "-"}</td>
                 <td className="px-6 py-4"><StatusBadge s={t.status} /></td>

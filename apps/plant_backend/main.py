@@ -5,6 +5,7 @@ import os
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 
 from apps.plant_backend import models  # noqa: F401
 from apps.plant_backend.middleware_station import StationPolicyMiddleware
@@ -48,6 +49,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(StationPolicyMiddleware)
 
@@ -154,6 +156,12 @@ def _bootstrap_masters() -> None:
 def startup() -> None:
     configure_logging(component="plant_backend")
     validate_runtime_secrets()
+
+    # Ensure tables exist (Alembic is preferred, but this handles new tables in this environment)
+    from common_core.db import Base, plant_engine
+
+    Base.metadata.create_all(bind=plant_engine)
+
     _bootstrap_admin_if_env_present()
     _bootstrap_masters()
     log.info("plant_started", extra={"site_code": settings.plant_site_code})

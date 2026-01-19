@@ -394,6 +394,7 @@ def create_ticket(
             "title": title,
             "priority": priority,
             "assigned_to": assigned_to,
+            "assigned_dept": dept,
         },
         actor_id,
         None,
@@ -554,7 +555,8 @@ def asset_create(db, payload: dict, actor_user_id: str | None, request_id: str |
         name=payload["name"].strip(),
         category=payload["category"].strip(),
         parent_id=payload.get("parent_id"),
-        criticality=payload.get("criticality", "medium").lower(),
+        criticality=payload.get("criticality", "medium").lower(),  # Deprecated but kept for compat
+        is_critical=payload.get("is_critical", False),
         tags=payload.get("tags", []),
         location_area=payload.get("location_area"),
         location_line=payload.get("location_line"),
@@ -570,7 +572,7 @@ def asset_create(db, payload: dict, actor_user_id: str | None, request_id: str |
         db,
         asset_id,
         "ASSET_CREATE",
-        {"asset_code": a.asset_code, "name": a.name},
+        {"asset_code": a.asset_code, "name": a.name, "is_critical": a.is_critical},
         f"asset_create:{asset_id}",
     )
     audit_write(
@@ -578,7 +580,7 @@ def asset_create(db, payload: dict, actor_user_id: str | None, request_id: str |
         "ASSET_CREATE",
         "asset",
         asset_id,
-        {"asset_code": asset_code},
+        {"asset_code": asset_code, "is_critical": a.is_critical},
         actor_user_id,
         None,
         request_id,
@@ -821,8 +823,8 @@ def report_request_create_and_generate_csv(
             from openpyxl import Workbook
             from openpyxl.styles import Alignment, Font, PatternFill
 
-            date_str = f"{dt_from.strftime('%Y%m%d')}_to_{dt_to.strftime('%Y%m%d')}"
-            filename = f"downtime_by_asset_{rr.site_code}_{date_str}.xlsx"
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Asset_Downtime_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
             from sqlalchemy import select
@@ -906,8 +908,8 @@ def report_request_create_and_generate_csv(
             from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
             from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-            date_str = f"{dt_from.strftime('%Y%m%d')}_to_{dt_to.strftime('%Y%m%d')}"
-            filename = f"summary_{rr.site_code}_{date_str}.pdf"
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Summary_{rr.site_code}_{date_str}.pdf"
             file_path = os.path.join(vault_root, filename)
 
             from sqlalchemy import select
@@ -936,80 +938,158 @@ def report_request_create_and_generate_csv(
                 .all()
             )
 
-            # Calculate stats
+            # Calculate basic stats
             total_stops = len(stops)
-            closed_stops = len([s for s in stops if s.closed_at_utc])
-            open_stops = total_stops - closed_stops
             total_downtime_min = sum(
                 (((s.closed_at_utc or dt_to) - s.opened_at_utc).total_seconds() / 60) for s in stops
             )
-
             total_tickets = len(tickets)
             closed_tickets = len([t for t in tickets if t.status == "CLOSED"])
+
+            # Calculate advanced stats
+            from collections import Counter, defaultdict
+
+            asset_downtime = defaultdict(float)
+            for s in stops:
+                dur = ((s.closed_at_utc or dt_to) - s.opened_at_utc).total_seconds() / 60
+                asset_downtime[s.asset_id] += dur
+            top_assets = sorted(asset_downtime.items(), key=lambda x: x[1], reverse=True)[:10]
+
+            reason_counts = Counter(s.reason or "Unknown" for s in stops)
+            top_reasons = reason_counts.most_common(10)
+
+            priority_counts = Counter(t.priority for t in tickets)
+            status_counts = Counter(t.status for t in tickets)
+
+            # MTTR calculation
+            resolved_diffs = []
+            for t in tickets:
+                if t.status == "CLOSED" and t.resolved_at_utc and t.created_at_utc:
+                    resolved_diffs.append(
+                        (t.resolved_at_utc - t.created_at_utc).total_seconds() / 3600
+                    )
+            avg_mttr = sum(resolved_diffs) / len(resolved_diffs) if resolved_diffs else 0
 
             doc = SimpleDocTemplate(file_path, pagesize=A4)
             styles = getSampleStyleSheet()
             title_style = ParagraphStyle(
                 "Title",
                 parent=styles["Heading1"],
-                fontSize=18,
+                fontSize=22,
                 textColor=colors.HexColor("#1e40af"),
+                spaceAfter=20,
             )
+            section_style = ParagraphStyle(
+                "Section",
+                parent=styles["Heading2"],
+                fontSize=14,
+                textColor=colors.HexColor("#1e40af"),
+                spaceBefore=15,
+                spaceAfter=10,
+            )
+            table_header_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("ALIGN", (0, 0), (-1, -1), "LEFT"),
+                ("FONTSIZE", (0, 0), (-1, -1), 10),
+                ("BOTTOMPADDING", (0, 0), (-1, 0), 10),
+                ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f3f4f6")),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+            ]
 
             elements = []
 
-            # Title
-            elements.append(Paragraph(f"Daily Summary Report - {rr.site_code}", title_style))
-            elements.append(Spacer(1, 20))
-
-            # Date range
+            # 1. Title & Header
+            elements.append(Paragraph(f"Management Summary Report - {rr.site_code}", title_style))
             elements.append(
                 Paragraph(
-                    f"<b>Period:</b> {dt_from.strftime('%Y-%m-%d %H:%M')} to {dt_to.strftime('%Y-%m-%d %H:%M')}",
+                    f"<b>Reporting Period:</b> {dt_from.strftime('%d %b %Y %H:%M')} to {dt_to.strftime('%d %b %Y %H:%M')}",
                     styles["Normal"],
                 )
             )
             elements.append(
                 Paragraph(
-                    f"<b>Generated:</b> {_now().strftime('%Y-%m-%d %H:%M:%S')} UTC",
+                    f"<b>Report Generated:</b> {_now().strftime('%d %b %Y %H:%M:%S')} UTC",
                     styles["Normal"],
                 )
             )
             elements.append(Spacer(1, 20))
 
-            # Summary table
+            # 2. Executive Summary Metrics
+            elements.append(Paragraph("Executive Overview", section_style))
             summary_data = [
-                ["Metric", "Value"],
-                ["Total Stops", str(total_stops)],
-                ["Open Stops", str(open_stops)],
-                ["Closed Stops", str(closed_stops)],
-                ["Total Downtime (Minutes)", f"{total_downtime_min:.1f}"],
-                ["Total Tickets", str(total_tickets)],
-                ["Closed Tickets", str(closed_tickets)],
+                ["KPI Metric", "Value"],
+                ["Total Downtime Events", str(total_stops)],
+                ["Total Cumulative Downtime", f"{total_downtime_min:.1f} Minutes"],
+                ["Total Support Tickets", str(total_tickets)],
+                [
+                    "Tickets Resolved",
+                    f"{closed_tickets} ({(closed_tickets / total_tickets * 100 if total_tickets else 0):.1f}%)",
+                ],
+                ["Avg. Resolution Time (MTTR)", f"{avg_mttr:.1f} Hours"],
             ]
+            t_summary = Table(summary_data, colWidths=[250, 150])
+            t_summary.setStyle(TableStyle(table_header_style))
+            elements.append(t_summary)
+            elements.append(Spacer(1, 20))
 
-            table = Table(summary_data, colWidths=[200, 150])
-            table.setStyle(
+            # 3. Top 10 Assets by Downtime
+            elements.append(Paragraph("Top 10 Assets by Cumulative Downtime", section_style))
+            asset_data = [["Asset ID", "Downtime (Min)"]]
+            for asset_id, mins in top_assets:
+                asset_data.append([asset_id, f"{mins:.1f}"])
+            if len(top_assets) == 0:
+                asset_data.append(["No data", "0.0"])
+
+            t_assets = Table(asset_data, colWidths=[250, 150])
+            t_assets.setStyle(TableStyle(table_header_style))
+            elements.append(t_assets)
+            elements.append(Spacer(1, 20))
+
+            # 4. Stop Reason Analysis
+            elements.append(Paragraph("Top Stop Reasons", section_style))
+            reason_data = [["Stop Reason", "Frequency"]]
+            for reason, count in top_reasons:
+                reason_data.append([reason, str(count)])
+            if len(top_reasons) == 0:
+                reason_data.append(["No data", "0"])
+
+            t_reasons = Table(reason_data, colWidths=[250, 150])
+            t_reasons.setStyle(TableStyle(table_header_style))
+            elements.append(t_reasons)
+
+            # 5. Ticket Distribution (Side-by-Side Table)
+            elements.append(Paragraph("Ticket Distribution", section_style))
+            ticket_data = [
+                ["By Priority", "Count", "", "By Status", "Count"],
+                ["High", str(priority_counts["HIGH"]), "", "Open", str(status_counts["OPEN"])],
+                [
+                    "Medium",
+                    str(priority_counts["MEDIUM"]),
+                    "",
+                    "Acknowledged",
+                    str(status_counts["ACKNOWLEDGED"]),
+                ],
+                ["Low", str(priority_counts["LOW"]), "", "Resolved", str(status_counts["CLOSED"])],
+            ]
+            t_tickets = Table(ticket_data, colWidths=[100, 50, 20, 100, 50])
+            t_tickets.setStyle(
                 TableStyle(
                     [
-                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("BACKGROUND", (0, 0), (1, 0), colors.HexColor("#2563EB")),
+                        ("BACKGROUND", (3, 0), (4, 0), colors.HexColor("#2563EB")),
+                        ("TEXTCOLOR", (0, 0), (1, 0), colors.white),
+                        ("TEXTCOLOR", (3, 0), (4, 0), colors.white),
                         ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
                         ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-                        ("FONTSIZE", (0, 0), (-1, -1), 11),
-                        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-                        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f3f4f6")),
-                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
-                        (
-                            "ROWBACKGROUNDS",
-                            (0, 1),
-                            (-1, -1),
-                            [colors.white, colors.HexColor("#f9fafb")],
-                        ),
+                        ("GRID", (0, 0), (1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                        ("GRID", (3, 0), (4, -1), 0.5, colors.HexColor("#e5e7eb")),
                     ]
                 )
             )
-            elements.append(table)
+            elements.append(t_tickets)
 
             doc.build(elements)
 

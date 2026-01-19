@@ -1,13 +1,15 @@
-import React, { useState, useEffect } from "react";
-import { apiGet } from "../../api";
+import { useEffect, useState } from "react";
+import { apiGet, apiPost } from "../../api";
 
 export default function StationConfig() {
     const [config, setConfig] = useState({
         plantName: "Loading...",
-        enableWhatsApp: false,
         stopQueueVisible: true,
         autoLogoutMinutes: 30
     });
+
+    const [saving, setSaving] = useState(false);
+    const [msg, setMsg] = useState("");
 
     useEffect(() => {
         loadConfig();
@@ -24,10 +26,33 @@ export default function StationConfig() {
 
     function handleChange(field, val) {
         setConfig({ ...config, [field]: val });
+        setMsg("");
     }
 
-    function handleSave() {
-        alert("This configuration is currently managed via environmental variables (docker-compose). UI editing coming in Batch 10.");
+    async function handleSave() {
+        setSaving(true);
+        setMsg("");
+        
+        const minutes = parseInt(config.autoLogoutMinutes);
+        if (isNaN(minutes) || minutes < 1) {
+            setMsg("Error: Auto Logout must be at least 1 minute.");
+            setSaving(false);
+            return;
+        }
+
+        try {
+            await apiPost("/master/config", {
+                stopQueueVisible: config.stopQueueVisible,
+                autoLogoutMinutes: minutes
+            });
+            setMsg("Configuration saved successfully!");
+            // Refresh global config if needed
+            window.dispatchEvent(new Event("config:updated"));
+        } catch (e) {
+            setMsg("Error: " + String(e));
+        } finally {
+            setSaving(false);
+        }
     }
 
     return (
@@ -52,16 +77,6 @@ export default function StationConfig() {
                 </div>
 
                 <div className="flex items-center justify-between">
-                    <span className="text-gray-700">Enable WhatsApp Alerts</span>
-                    <button
-                        className={`w-12 h-6 rounded-full p-1 transition-colors ${config.enableWhatsApp ? 'bg-green-500' : 'bg-gray-300'}`}
-                        onClick={() => handleChange('enableWhatsApp', !config.enableWhatsApp)}
-                    >
-                        <div className={`bg-white w-4 h-4 rounded-full shadow transform transition-transform ${config.enableWhatsApp ? 'translate-x-6' : ''}`} />
-                    </button>
-                </div>
-
-                <div className="flex items-center justify-between">
                     <span className="text-gray-700">Show Stop Queue on Dashboard</span>
                     <button
                         className={`w-12 h-6 rounded-full p-1 transition-colors ${config.stopQueueVisible ? 'bg-blue-600' : 'bg-gray-300'}`}
@@ -75,6 +90,7 @@ export default function StationConfig() {
                     <label className="block text-sm font-medium text-gray-700">Auto Logout (Minutes)</label>
                     <input
                         type="number"
+                        min="1"
                         className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                         value={config.autoLogoutMinutes}
                         onChange={e => handleChange('autoLogoutMinutes', e.target.value)}
@@ -83,10 +99,17 @@ export default function StationConfig() {
 
                 <button
                     onClick={handleSave}
-                    className="bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 w-full mt-4"
+                    disabled={saving}
+                    className={`bg-purple-600 text-white px-4 py-2 rounded hover:bg-purple-700 w-full mt-4 transition-opacity ${saving ? 'opacity-50 cursor-not-allowed' : ''}`}
                 >
-                    Save Configuration
+                    {saving ? "Saving..." : "Save Configuration"}
                 </button>
+
+                {msg && (
+                    <div className={`mt-4 text-center text-sm font-medium ${msg.startsWith("Error") ? "text-red-600" : "text-green-600"}`}>
+                        {msg}
+                    </div>
+                )}
             </div>
         </div>
     );

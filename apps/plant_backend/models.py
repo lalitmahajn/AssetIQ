@@ -8,6 +8,7 @@ from common_core.db import Base
 class User(Base):
     __tablename__ = "users"
     id = Column(String(64), primary_key=True)
+    full_name = Column(String(128), nullable=True)
     pin_hash = Column(String(128), nullable=False)
     roles = Column(String(256), nullable=False)
 
@@ -36,8 +37,8 @@ class Ticket(Base):
     assigned_dept = Column(String(64), nullable=True)
     source = Column(String(32), nullable=False, default="MANUAL")  # MANUAL, AUTO
     stop_id = Column(String(64), nullable=True, index=True)  # Link to StopQueue/Timeline
-    created_at_utc = Column(DateTime, nullable=False)
-    sla_due_at_utc = Column(DateTime, nullable=True)
+    created_at_utc = Column(DateTime, nullable=False, index=True)
+    sla_due_at_utc = Column(DateTime, nullable=True, index=True)
     acknowledged_at_utc = Column(DateTime, nullable=True)
     resolved_at_utc = Column(DateTime, nullable=True)
     resolution_reason = Column(String(64), nullable=True)  # Root cause code
@@ -111,7 +112,7 @@ class AuditLog(Base):
     entity_id = Column(String(64), nullable=False, index=True)
     request_id = Column(String(64), nullable=True, index=True)
     details_json = Column(JSON, nullable=False)
-    created_at_utc = Column(DateTime, nullable=False)
+    created_at_utc = Column(DateTime, nullable=False, index=True)
 
 
 class DeadLetter(Base):
@@ -130,7 +131,7 @@ class Asset(Base):
     id = Column(String(64), primary_key=True)
     site_code = Column(String(16), nullable=False, index=True)
     asset_code = Column(String(64), nullable=False, index=True)  # human readable unique code
-    name = Column(String(256), nullable=False)
+    name = Column(String(256), nullable=False, index=True)
     description = Column(Text, nullable=True)  # Added for UI compatibility
     category = Column(String(128), nullable=False)
     parent_id = Column(String(64), nullable=True, index=True)
@@ -143,6 +144,7 @@ class Asset(Base):
     updated_at_utc = Column(DateTime, nullable=True)
     created_by_user_id = Column(String(64), nullable=True)
     is_active = Column(Boolean, nullable=False, default=True)
+    is_critical = Column(Boolean, default=False, nullable=False)
 
 
 class MasterType(Base):
@@ -233,3 +235,10 @@ class Station(Base):
     token_salt = Column(String(64), nullable=False)
     is_active = Column(Boolean, nullable=False, default=True)
     created_at_utc = Column(DateTime, nullable=False)
+
+
+class SystemConfig(Base):
+    __tablename__ = "system_config"
+    config_key = Column(String(64), primary_key=True)
+    config_value = Column(JSON, nullable=False)
+    updated_at_utc = Column(DateTime, nullable=False)

@@ -1,10 +1,10 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "../../api";
 
 export default function AssetManager() {
     const [assets, setAssets] = useState([]);
     const [err, setErr] = useState("");
-    const [form, setForm] = useState({ id: "", name: "", parent_id: "", asset_type: "MACHINE", description: "" });
+    const [form, setForm] = useState({ id: "", name: "", parent_id: "", asset_type: "MACHINE", description: "", is_critical: false });
     const [editing, setEditing] = useState(false);
 
     async function load() {
@@ -27,7 +27,7 @@ export default function AssetManager() {
         try {
             const url = editing ? "/master/assets/update" : "/master/assets/create";
             await apiPost(url, body);
-            setForm({ id: "", name: "", parent_id: "", asset_type: "MACHINE", description: "" });
+            setForm({ id: "", name: "", parent_id: "", asset_type: "MACHINE", description: "", is_critical: false });
             setEditing(false);
             load();
         } catch (e) {
@@ -41,7 +41,10 @@ export default function AssetManager() {
             name: a.name,
             parent_id: a.parent_id || "",
             asset_type: a.asset_type,
-            description: a.description || ""
+            parent_id: a.parent_id || "",
+            asset_type: a.asset_type,
+            description: a.description || "",
+            is_critical: a.is_critical || false
         });
         setEditing(true);
     }
@@ -98,10 +101,20 @@ export default function AssetManager() {
                         value={form.description}
                         onChange={e => setForm({ ...form, description: e.target.value })}
                     />
+                    <div className="col-span-2 flex items-center gap-2">
+                         <input 
+                            type="checkbox" 
+                            id="is_critical"
+                            checked={form.is_critical} 
+                            onChange={e => setForm({...form, is_critical: e.target.checked})} 
+                            className="w-4 h-4 text-blue-600 rounded"
+                        />
+                        <label htmlFor="is_critical" className="text-gray-700 font-medium select-none">Mark as Critical Asset</label>
+                    </div>
                     <div className="col-span-2 flex gap-2">
                         <button className="bg-blue-600 text-white px-4 py-2 rounded">{editing ? "Update" : "Create"}</button>
                         {editing && (
-                            <button type="button" onClick={() => { setEditing(false); setForm({ id: "", name: "", parent_id: "", asset_type: "MACHINE", description: "" }) }} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
+                            <button type="button" onClick={() => { setEditing(false); setForm({ id: "", name: "", parent_id: "", asset_type: "MACHINE", description: "", is_critical: false }) }} className="bg-gray-400 text-white px-4 py-2 rounded">Cancel</button>
                         )}
                     </div>
                 </form>
@@ -124,7 +137,9 @@ export default function AssetManager() {
                             <tr key={a.id}>
                                 <td className="p-3 text-xs font-mono">{a.asset_type}</td>
                                 <td className="p-3 font-medium">{a.id}</td>
-                                <td className="p-3">{a.name}</td>
+                                <td className="p-3">{a.name} 
+                                    {a.is_critical && <span className="ml-2 bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Critical</span>}
+                                </td>
                                 <td className="p-3 text-gray-500">{a.parent_id || "-"}</td>
                                 <td className="p-3 space-x-2">
                                     <button onClick={() => edit(a)} className="text-blue-600 hover:underline">Edit</button>

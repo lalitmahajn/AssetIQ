@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from apps.plant_backend.deps import require_perm
-from apps.plant_backend.models import Ticket, TicketActivity
+from apps.plant_backend.models import Ticket, TicketActivity, User
 from apps.plant_backend.services import acknowledge_ticket, close_ticket, create_ticket
 from common_core.db import PlantSessionLocal
 
@@ -36,12 +36,19 @@ def list_tickets(
 ):
     db = PlantSessionLocal()
     try:
-        q = select(Ticket).order_by(Ticket.created_at_utc.desc()).limit(limit).offset(offset)
+        q = (
+            select(Ticket, User.full_name)
+            .outerjoin(User, Ticket.assigned_to_user_id == User.id)
+            .order_by(Ticket.created_at_utc.desc())
+            .limit(limit)
+            .offset(offset)
+        )
         if status.upper() == "OPEN":
             q = q.where(Ticket.status != "CLOSED")
         elif status.upper() == "CLOSED":
             q = q.where(Ticket.status == "CLOSED")
-        rows = db.execute(q).scalars().all()
+
+        rows = db.execute(q).all()
         items = [
             {
                 "id": t.id,
@@ -50,14 +57,14 @@ def list_tickets(
                 "title": t.title,
                 "status": t.status,
                 "priority": t.priority,
-                "assigned_to": t.assigned_to_user_id,
+                "assigned_to": full_name or t.assigned_to_user_id,
                 "source": t.source,
-                "created_at_utc": t.created_at_utc.isoformat(),
-                "sla_due_at_utc": t.sla_due_at_utc.isoformat() if t.sla_due_at_utc else None,
+                "created_at_utc": t.created_at_utc.isoformat() + "Z",
+                "sla_due_at_utc": t.sla_due_at_utc.isoformat() + "Z" if t.sla_due_at_utc else None,
                 "sla_state": _sla_state(t),
                 "assigned_dept": t.assigned_dept,
             }
-            for t in rows
+            for t, full_name in rows
         ]
         return {"items": items, "page": {"limit": limit, "offset": offset, "returned": len(items)}}
     finally:
@@ -196,8 +203,8 @@ def get_details(ticket_id: str, user: Annotated[dict, Depends(require_perm("tick
                 "assigned_to": t.assigned_to_user_id,
                 "source": t.source,
                 "stop_id": t.stop_id,
-                "created_at_utc": t.created_at_utc.isoformat(),
-                "sla_due_at_utc": t.sla_due_at_utc.isoformat() if t.sla_due_at_utc else None,
+                "created_at_utc": t.created_at_utc.isoformat() + "Z",
+                "sla_due_at_utc": t.sla_due_at_utc.isoformat() + "Z" if t.sla_due_at_utc else None,
                 "resolution_reason": t.resolution_reason,
             },
             "activity": [
@@ -206,7 +213,7 @@ def get_details(ticket_id: str, user: Annotated[dict, Depends(require_perm("tick
                     "type": a.activity_type,
                     "actor": a.actor_id,
                     "details": a.details,
-                    "created_at_utc": a.created_at_utc.isoformat(),
+                    "created_at_utc": a.created_at_utc.isoformat() + "Z",
                 }
                 for a in acts
             ],

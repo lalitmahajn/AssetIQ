@@ -18,7 +18,7 @@ class AssetCreateIn(BaseModel):
     name: str = Field(min_length=1)
     category: str = Field(min_length=1)
     parent_id: str | None = None
-    criticality: str = "medium"
+    is_critical: bool = False
     location_area: str | None = None
     location_line: str | None = None
 
@@ -47,18 +47,29 @@ def tree(user: Annotated[Any, Depends(require_perm("asset.view"))] = None):
 
 
 @router.get("/list")
-def list_assets(user: Annotated[Any, Depends(require_perm("asset.view"))] = None):
+def list_assets(
+    q: str | None = None,
+    user: Annotated[Any, Depends(require_perm("asset.view"))] = None,
+):
     db = PlantSessionLocal()
     try:
+        from sqlalchemy import or_
+
         from apps.plant_backend.models import Asset
 
-        rows = (
-            db.execute(select(Asset).where(Asset.is_active.is_(True)).order_by(Asset.asset_code))
-            .scalars()
-            .all()
-        )
+        stmt = select(Asset).where(Asset.is_active.is_(True))
+        if q:
+            stmt = stmt.where(or_(Asset.name.ilike(f"%{q}%"), Asset.asset_code.ilike(f"%{q}%")))
+
+        rows = db.execute(stmt.order_by(Asset.asset_code)).scalars().all()
         return [
-            {"id": r.id, "asset_code": r.asset_code, "name": r.name, "category": r.category}
+            {
+                "id": r.id,
+                "asset_code": r.asset_code,
+                "name": r.name,
+                "category": r.category,
+                "is_critical": r.is_critical,
+            }
             for r in rows
         ]
     finally:

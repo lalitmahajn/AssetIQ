@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { apiGet, apiPost } from "../../api";
 
 export default function UserList() {
@@ -10,6 +10,7 @@ export default function UserList() {
 
     // Form State
     const [username, setUsername] = useState("");
+    const [fullName, setFullName] = useState("");
     const [pin, setPin] = useState("");
     const [roles, setRoles] = useState("maintenance");
 
@@ -32,12 +33,13 @@ export default function UserList() {
             if (isEditing) {
                 // Update
                 const body = { username };
+                if (fullName) body.full_name = fullName;
                 if (pin) body.pin = pin;
                 if (roles) body.roles = roles;
                 await apiPost("/master/users/update", body);
             } else {
                 // Create
-                await apiPost("/master/users/create", { username, pin, roles });
+                await apiPost("/master/users/create", { username, full_name: fullName, pin, roles });
             }
 
             resetForm();
@@ -62,6 +64,7 @@ export default function UserList() {
 
     function edit(u) {
         setUsername(u.id);
+        setFullName(u.full_name || "");
         setRoles(u.roles);
         setPin(""); // Don't show old pin, just empty to keep or new to change
         setIsEditing(true);
@@ -72,6 +75,7 @@ export default function UserList() {
         setShowForm(false);
         setIsEditing(false);
         setUsername("");
+        setFullName("");
         setPin("");
         setRoles("maintenance");
         setErr("");
@@ -107,6 +111,12 @@ export default function UserList() {
                             required
                             disabled={isEditing} // Cannot change ID on edit
                         />
+                         <input
+                            placeholder="Full Name (e.g. John Doe)"
+                            className="border p-2 rounded"
+                            value={fullName}
+                            onChange={e => setFullName(e.target.value)}
+                        />
                         <input
                             placeholder={isEditing ? "New PIN (blank to keep)" : "PIN (min 6 digits)"}
                             className="border p-2 rounded"
@@ -139,6 +149,7 @@ export default function UserList() {
                 <thead>
                     <tr className="border-b">
                         <th className="py-2">User ID / Email</th>
+                        <th className="py-2">Full Name</th>
                         <th className="py-2">Roles</th>
                         <th className="py-2">Actions</th>
                     </tr>
@@ -149,6 +160,7 @@ export default function UserList() {
                     ) : users.map(u => (
                         <tr key={u.id} className="border-b last:border-0 hover:bg-gray-50">
                             <td className="py-2 font-medium">{u.id}</td>
+                            <td className="py-2 text-gray-600">{u.full_name || "-"}</td>
                             <td className="py-2">
                                 {u.roles.split(",").map(r => {
                                     const role = r.trim().toLowerCase();

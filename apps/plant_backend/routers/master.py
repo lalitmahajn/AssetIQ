@@ -39,11 +39,13 @@ class ReasonUpdateIn(BaseModel):
 class UserItem(BaseModel):
     id: str
     roles: str
+    full_name: str | None
     has_pin: bool
 
 
 class CreateUserIn(BaseModel):
     username: str = Field(min_length=3, max_length=64)
+    full_name: str | None = None
     pin: str = Field(min_length=6, max_length=32)
     roles: str = "maintenance"
 
@@ -66,6 +68,7 @@ class AssetItem(BaseModel):
     asset_type: str
     description: str | None
     is_active: bool
+    is_critical: bool
 
 
 class AssetCreateIn(BaseModel):
@@ -74,6 +77,7 @@ class AssetCreateIn(BaseModel):
     parent_id: str | None = None
     asset_type: str = "MACHINE"
     description: str | None = None
+    is_critical: bool = False
 
 
 class AssetUpdateIn(BaseModel):
@@ -82,10 +86,12 @@ class AssetUpdateIn(BaseModel):
     parent_id: str | None = None
     asset_type: str | None = None
     description: str | None = None
+    is_critical: bool | None = None
 
 
 class UserUpdateIn(BaseModel):
     username: str
+    full_name: str | None = None
     pin: str | None = None
     roles: str | None = None
 
@@ -173,7 +179,9 @@ def list_users(claims: Annotated[Any, Depends(require_roles("admin"))] = None):
     db = PlantSessionLocal()
     try:
         users = db.execute(select(User)).scalars().all()
-        return [{"id": u.id, "roles": u.roles, "has_pin": True} for u in users]
+        return [
+            {"id": u.id, "roles": u.roles, "full_name": u.full_name, "has_pin": True} for u in users
+        ]
     finally:
         db.close()
 
@@ -186,7 +194,12 @@ def create_user(body: CreateUserIn, claims: Annotated[Any, Depends(require_roles
         if existing:
             raise HTTPException(status_code=409, detail="USER_EXISTS")
 
-        new_user = User(id=body.username, pin_hash=hash_pin(body.pin), roles=body.roles)
+        new_user = User(
+            id=body.username,
+            pin_hash=hash_pin(body.pin),
+            roles=body.roles,
+            full_name=body.full_name,
+        )
         db.add(new_user)
         db.commit()
         return {"ok": True, "username": body.username}
@@ -195,25 +208,39 @@ def create_user(body: CreateUserIn, claims: Annotated[Any, Depends(require_roles
 
 
 # 3. Audit Logs
-@router.get("/audit/list", response_model=list[AuditLogItem])
-def list_audit(limit: int = 50, claims: Annotated[Any, Depends(require_roles("admin"))] = None):
+@router.get("/audit/list")
+def list_audit(
+    limit: int = 50,
+    offset: int = 0,
+    claims: Annotated[Any, Depends(require_roles("admin"))] = None,
+):
     db = PlantSessionLocal()
     try:
-        # Fetch latest logs
-        logs = db.execute(select(AuditLog).order_by(desc(AuditLog.id)).limit(limit)).scalars().all()
+        # Total count for pagination
+        from sqlalchemy import func
 
-        return [
-            AuditLogItem(
-                id=log_item.id,
-                actor_user_id=log_item.actor_user_id,
-                action=log_item.action,
-                entity_type=log_item.entity_type,
-                entity_id=log_item.entity_id,
-                created_at_utc=log_item.created_at_utc.isoformat(),
-                details=str(log_item.details_json),
-            )
+        total = db.execute(select(func.count()).select_from(AuditLog)).scalar()
+
+        # Fetch latest logs with offset and limit
+        logs = (
+            db.execute(select(AuditLog).order_by(desc(AuditLog.id)).offset(offset).limit(limit))
+            .scalars()
+            .all()
+        )
+
+        items = [
+            {
+                "id": log_item.id,
+                "actor_user_id": log_item.actor_user_id,
+                "action": log_item.action,
+                "entity_type": log_item.entity_type,
+                "entity_id": log_item.entity_id,
+                "created_at_utc": log_item.created_at_utc.isoformat(),
+                "details": log_item.details_json,
+            }
             for log_item in logs
         ]
+        return {"items": items, "total": total}
     finally:
         db.close()
 
@@ -246,6 +273,7 @@ def list_assets(
                 asset_type=a.category,  # Map category back to asset_type for UI compatibility if needed, though AssetItem says asset_type
                 description=a.description,
                 is_active=a.is_active,
+                is_critical=a.is_critical,
             )
             for a in assets
         ]
@@ -273,6 +301,7 @@ def create_asset(
             description=body.description,
             created_at_utc=datetime.utcnow(),
             is_active=True,
+            is_critical=body.is_critical,
         )
         db.add(new_asset)
         db.commit()
@@ -302,6 +331,8 @@ def update_asset(
             asset.asset_type = body.asset_type
         if body.description is not None:
             asset.description = body.description
+        if body.is_critical is not None:
+            asset.is_critical = body.is_critical
 
         db.commit()
         return {"ok": True}
@@ -339,6 +370,8 @@ def update_user(body: UserUpdateIn, claims: Annotated[Any, Depends(require_roles
             user.pin_hash = hash_pin(body.pin)
         if body.roles:
             user.roles = body.roles
+        if body.full_name is not None:
+            user.full_name = body.full_name
 
         db.commit()
         return {"ok": True}
@@ -392,17 +425,64 @@ def merge_reasons(
 
 
 # 7. Configuration
+from apps.plant_backend.models import SystemConfig
+
+
 @router.get("/config")
 def get_config(claims: Annotated[Any, Depends(require_roles("admin"))] = None):
-    # Fetch from environment
-    import os
+    db = PlantSessionLocal()
+    try:
+        # Default config
+        import os
 
-    site_code = os.getenv("PLANT_SITE_CODE", "Unknown")
+        site_code = os.getenv("PLANT_SITE_CODE", "Unknown")
+        config = {
+            "plantName": f"Plant {site_code}",
+            "siteCode": site_code,
+            "stopQueueVisible": True,
+            "autoLogoutMinutes": 30,
+        }
 
-    return {
-        "plantName": f"Plant {site_code}",  # Simple formatting
-        "siteCode": site_code,
-        "enableWhatsApp": False,  # Placeholder
-        "stopQueueVisible": True,
-        "autoLogoutMinutes": 30,
-    }
+        # Override with DB values
+        rows = db.execute(select(SystemConfig)).scalars().all()
+        for row in rows:
+            config[row.config_key] = row.config_value
+
+        return config
+    finally:
+        db.close()
+
+
+@router.post("/config")
+def set_config(
+    payload: dict,
+    claims: Annotated[Any, Depends(require_roles("admin"))] = None,
+):
+    db = PlantSessionLocal()
+    try:
+        now = datetime.utcnow()
+        for k, v in payload.items():
+            # Only allow specific keys
+            if k not in ["stopQueueVisible", "autoLogoutMinutes"]:
+                continue
+
+            # Validation
+            if k == "autoLogoutMinutes":
+                try:
+                    val = int(v)
+                    if val < 1:
+                        continue  # Or raise error
+                except:
+                    continue
+
+            row = db.get(SystemConfig, k)
+            if row:
+                row.config_value = v
+                row.updated_at_utc = now
+            else:
+                db.add(SystemConfig(config_key=k, config_value=v, updated_at_utc=now))
+
+        db.commit()
+        return {"status": "ok"}
+    finally:
+        db.close()

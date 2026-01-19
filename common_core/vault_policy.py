@@ -17,3 +17,7 @@ def archive_days() -> int:
 
 def cold_enabled() -> bool:
     return bool(settings.report_cold_enabled)
+
+
+def retention_days() -> int:
+    return int(settings.report_retention_days)
