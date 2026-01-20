@@ -537,8 +537,6 @@ def asset_create(db, payload: dict, actor_user_id: str | None, request_id: str |
     site_code = settings.plant_site_code
     asset_code = payload["asset_code"].strip()
 
-    from sqlalchemy import select
-
     exists = db.execute(
         select(Asset).where(Asset.site_code == site_code, Asset.asset_code == asset_code)
     ).scalar_one_or_none()
@@ -600,8 +598,6 @@ def asset_get(db, asset_id: str):
 
 
 def asset_tree(db):
-    from sqlalchemy import select
-
     assets = (
         db.execute(
             select(Asset).where(
@@ -639,8 +635,6 @@ def asset_tree(db):
 
 
 def master_type_list(db, include_inactive: bool = False):
-    from sqlalchemy import select
-
     q = select(MasterType).where(MasterType.site_code == settings.plant_site_code)
     if not include_inactive:
         q = q.where(MasterType.is_active.is_(True))
@@ -689,8 +683,6 @@ def suggestion_record(
     db, master_type_code: str, typed_text: str, actor_id: str | None = None, threshold: int = 5
 ):
     import re
-
-    from sqlalchemy import select
 
     norm = re.sub(r"\s+", " ", typed_text.strip().lower())
     if not norm:
@@ -827,8 +819,6 @@ def report_request_create_and_generate_csv(
             filename = f"Asset_Downtime_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
-            from sqlalchemy import select
-
             stops = (
                 db.execute(
                     select(StopQueue)
@@ -901,8 +891,966 @@ def report_request_create_and_generate_csv(
 
             wb.save(file_path)
 
+        elif report_type == "ticket_performance":
+            # Generate PDF for ticket performance metrics
+            from collections import Counter, defaultdict
+
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Ticket_Performance_{rr.site_code}_{date_str}.pdf"
+            file_path = os.path.join(vault_root, filename)
+
+            tickets = (
+                db.execute(
+                    select(Ticket).where(
+                        Ticket.site_code == rr.site_code,
+                        Ticket.created_at_utc >= dt_from,
+                        Ticket.created_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            total_tickets = len(tickets)
+            closed_tickets = [t for t in tickets if t.status == "CLOSED"]
+            ack_tickets = [t for t in tickets if t.acknowledged_at_utc]
+
+            # SLA compliance
+            sla_met = [
+                t
+                for t in closed_tickets
+                if t.resolved_at_utc and t.sla_due_at_utc and t.resolved_at_utc <= t.sla_due_at_utc
+            ]
+            sla_compliance = (len(sla_met) / len(closed_tickets) * 100) if closed_tickets else 0
+
+            # Time metrics
+            mttr_list = [
+                (t.resolved_at_utc - t.created_at_utc).total_seconds() / 3600
+                for t in closed_tickets
+                if t.resolved_at_utc
+            ]
+            avg_mttr = sum(mttr_list) / len(mttr_list) if mttr_list else 0
+
+            mtta_list = [
+                (t.acknowledged_at_utc - t.created_at_utc).total_seconds() / 60
+                for t in ack_tickets
+                if t.acknowledged_at_utc
+            ]
+            avg_mtta = sum(mtta_list) / len(mtta_list) if mtta_list else 0
+
+            # Distributions
+            priority_counts = Counter(t.priority for t in tickets)
+            status_counts = Counter(t.status for t in tickets)
+            dept_counts = Counter(t.assigned_dept or "Unassigned" for t in tickets)
+            user_counts = Counter(t.assigned_to_user_id or "Unassigned" for t in tickets)
+
+            doc = SimpleDocTemplate(file_path, pagesize=A4)
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                "Title",
+                parent=styles["Heading1"],
+                fontSize=20,
+                textColor=colors.HexColor("#1e40af"),
+                spaceAfter=15,
+            )
+            section_style = ParagraphStyle(
+                "Section",
+                parent=styles["Heading2"],
+                fontSize=13,
+                textColor=colors.HexColor("#1e40af"),
+                spaceBefore=12,
+                spaceAfter=8,
+            )
+            table_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+            ]
+
+            elements = [
+                Paragraph(f"Ticket Performance Report - {rr.site_code}", title_style),
+                Paragraph(
+                    f"<b>Period:</b> {dt_from.strftime('%d %b %Y %H:%M')} to {dt_to.strftime('%d %b %Y %H:%M')}",
+                    styles["Normal"],
+                ),
+                Spacer(1, 15),
+                Paragraph("Key Metrics", section_style),
+            ]
+
+            metrics_data = [
+                ["Metric", "Value"],
+                ["Total Tickets", str(total_tickets)],
+                [
+                    "Tickets Closed",
+                    f"{len(closed_tickets)} ({len(closed_tickets) / total_tickets * 100:.1f}%)"
+                    if total_tickets
+                    else "0 (0%)",
+                ],
+                ["SLA Compliance Rate", f"{sla_compliance:.1f}%"],
+                ["Avg. Time to Acknowledge (MTTA)", f"{avg_mtta:.1f} Minutes"],
+                ["Avg. Resolution Time (MTTR)", f"{avg_mttr:.1f} Hours"],
+            ]
+            elements.append(Table(metrics_data, colWidths=[200, 150]))
+            elements[-1].setStyle(TableStyle(table_style))
+            elements.append(Spacer(1, 15))
+
+            elements.append(Paragraph("Tickets by Priority", section_style))
+            priority_data = [["Priority", "Count"]] + [
+                [p, str(c)] for p, c in priority_counts.most_common()
+            ]
+            elements.append(Table(priority_data, colWidths=[150, 100]))
+            elements[-1].setStyle(TableStyle(table_style))
+            elements.append(Spacer(1, 10))
+
+            elements.append(Paragraph("Tickets by Status", section_style))
+            status_data = [["Status", "Count"]] + [
+                [s, str(c)] for s, c in status_counts.most_common()
+            ]
+            elements.append(Table(status_data, colWidths=[150, 100]))
+            elements[-1].setStyle(TableStyle(table_style))
+            elements.append(Spacer(1, 10))
+
+            elements.append(Paragraph("Tickets by Department", section_style))
+            dept_data = [["Department", "Count"]] + [
+                [d, str(c)] for d, c in dept_counts.most_common(10)
+            ]
+            elements.append(Table(dept_data, colWidths=[200, 100]))
+            elements[-1].setStyle(TableStyle(table_style))
+            elements.append(Spacer(1, 10))
+
+            elements.append(Paragraph("Top Assignees", section_style))
+            user_data = [["User", "Tickets"]] + [
+                [u, str(c)] for u, c in user_counts.most_common(10)
+            ]
+            elements.append(Table(user_data, colWidths=[200, 100]))
+            elements[-1].setStyle(TableStyle(table_style))
+
+            doc.build(elements)
+
+        elif report_type == "sla_breach":
+            # Generate Excel for SLA breach details
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"SLA_Breach_{rr.site_code}_{date_str}.xlsx"
+            file_path = os.path.join(vault_root, filename)
+
+            tickets = (
+                db.execute(
+                    select(Ticket).where(
+                        Ticket.site_code == rr.site_code,
+                        Ticket.created_at_utc >= dt_from,
+                        Ticket.created_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            # Filter breached tickets
+            now = _now()
+            breached = []
+            for t in tickets:
+                if not t.sla_due_at_utc:
+                    continue
+                if (
+                    t.status == "CLOSED"
+                    and t.resolved_at_utc
+                    and t.resolved_at_utc > t.sla_due_at_utc
+                ):
+                    breach_hours = (t.resolved_at_utc - t.sla_due_at_utc).total_seconds() / 3600
+                    breached.append((t, breach_hours, "Resolved Late"))
+                elif t.status != "CLOSED" and now > t.sla_due_at_utc:
+                    breach_hours = (now - t.sla_due_at_utc).total_seconds() / 3600
+                    breached.append((t, breach_hours, "Still Open"))
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "SLA Breaches"
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="DC2626", end_color="DC2626", fill_type="solid")
+
+            headers = [
+                "Ticket ID",
+                "Asset ID",
+                "Title",
+                "Priority",
+                "Department",
+                "Created At",
+                "SLA Due",
+                "Resolved At",
+                "Breach Hours",
+                "Status",
+            ]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+
+            for row_idx, (t, breach_hrs, status) in enumerate(breached, 2):
+                ws.cell(row=row_idx, column=1, value=t.id)
+                ws.cell(row=row_idx, column=2, value=t.asset_id)
+                ws.cell(row=row_idx, column=3, value=t.title[:50])
+                ws.cell(row=row_idx, column=4, value=t.priority)
+                ws.cell(row=row_idx, column=5, value=t.assigned_dept or "-")
+                ws.cell(row=row_idx, column=6, value=t.created_at_utc.strftime("%Y-%m-%d %H:%M"))
+                ws.cell(
+                    row=row_idx,
+                    column=7,
+                    value=t.sla_due_at_utc.strftime("%Y-%m-%d %H:%M") if t.sla_due_at_utc else "-",
+                )
+                ws.cell(
+                    row=row_idx,
+                    column=8,
+                    value=t.resolved_at_utc.strftime("%Y-%m-%d %H:%M")
+                    if t.resolved_at_utc
+                    else "-",
+                )
+                ws.cell(row=row_idx, column=9, value=round(breach_hrs, 1))
+                ws.cell(row=row_idx, column=10, value=status)
+
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 40)
+
+            wb.save(file_path)
+
+        elif report_type == "asset_health":
+            # Generate Excel for asset health metrics
+            from collections import defaultdict
+
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Asset_Health_{rr.site_code}_{date_str}.xlsx"
+            file_path = os.path.join(vault_root, filename)
+
+            # Get filter options
+            filter_asset = filters.get("asset_id")
+            critical_only = filters.get("critical_only", False)
+
+            asset_query = select(Asset).where(
+                Asset.site_code == rr.site_code, Asset.is_active.is_(True)
+            )
+            if filter_asset:
+                asset_query = asset_query.where(Asset.id == filter_asset)
+            if critical_only:
+                asset_query = asset_query.where(Asset.is_critical.is_(True))
+            assets = db.execute(asset_query).scalars().all()
+
+            stops = (
+                db.execute(
+                    select(StopQueue).where(
+                        StopQueue.site_code == rr.site_code,
+                        StopQueue.opened_at_utc >= dt_from,
+                        StopQueue.opened_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            tickets = (
+                db.execute(
+                    select(Ticket).where(
+                        Ticket.site_code == rr.site_code,
+                        Ticket.created_at_utc >= dt_from,
+                        Ticket.created_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            # Aggregate by asset
+            asset_stats = defaultdict(
+                lambda: {
+                    "stops": 0,
+                    "downtime_min": 0,
+                    "tickets": 0,
+                    "name": "",
+                    "category": "",
+                    "is_critical": False,
+                }
+            )
+            for a in assets:
+                asset_stats[a.id]["name"] = a.name
+                asset_stats[a.id]["category"] = a.category
+                asset_stats[a.id]["is_critical"] = a.is_critical
+
+            for s in stops:
+                if s.asset_id in asset_stats or not filter_asset:
+                    asset_stats[s.asset_id]["stops"] += 1
+                    dur = ((s.closed_at_utc or dt_to) - s.opened_at_utc).total_seconds() / 60
+                    asset_stats[s.asset_id]["downtime_min"] += dur
+
+            for t in tickets:
+                if t.asset_id in asset_stats or not filter_asset:
+                    asset_stats[t.asset_id]["tickets"] += 1
+
+            total_period_min = (dt_to - dt_from).total_seconds() / 60
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Asset Health"
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="059669", end_color="059669", fill_type="solid")
+
+            headers = [
+                "Asset ID",
+                "Asset Name",
+                "Category",
+                "Critical",
+                "Stop Count",
+                "Total Downtime (Min)",
+                "Avg Downtime (Min)",
+                "Availability %",
+                "Tickets",
+            ]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+
+            row_idx = 2
+            for aid, stats in sorted(
+                asset_stats.items(), key=lambda x: x[1]["downtime_min"], reverse=True
+            ):
+                avg_down = stats["downtime_min"] / stats["stops"] if stats["stops"] else 0
+                availability = (
+                    ((total_period_min - stats["downtime_min"]) / total_period_min * 100)
+                    if total_period_min
+                    else 100
+                )
+                ws.cell(row=row_idx, column=1, value=aid)
+                ws.cell(row=row_idx, column=2, value=stats["name"] or aid)
+                ws.cell(row=row_idx, column=3, value=stats["category"] or "-")
+                ws.cell(row=row_idx, column=4, value="Yes" if stats["is_critical"] else "No")
+                ws.cell(row=row_idx, column=5, value=stats["stops"])
+                ws.cell(row=row_idx, column=6, value=round(stats["downtime_min"], 1))
+                ws.cell(row=row_idx, column=7, value=round(avg_down, 1))
+                ws.cell(row=row_idx, column=8, value=round(max(0, availability), 1))
+                ws.cell(row=row_idx, column=9, value=stats["tickets"])
+                row_idx += 1
+
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 35)
+
+            wb.save(file_path)
+
+        elif report_type == "stop_reason_analysis":
+            # Generate PDF for stop reason Pareto analysis
+            from collections import Counter
+
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Stop_Reason_Analysis_{rr.site_code}_{date_str}.pdf"
+            file_path = os.path.join(vault_root, filename)
+
+            stops = (
+                db.execute(
+                    select(StopQueue).where(
+                        StopQueue.site_code == rr.site_code,
+                        StopQueue.opened_at_utc >= dt_from,
+                        StopQueue.opened_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            reason_freq = Counter(s.reason or "Unknown" for s in stops)
+            reason_downtime = {}
+            for s in stops:
+                r = s.reason or "Unknown"
+                dur = ((s.closed_at_utc or dt_to) - s.opened_at_utc).total_seconds() / 60
+                reason_downtime[r] = reason_downtime.get(r, 0) + dur
+
+            doc = SimpleDocTemplate(file_path, pagesize=A4)
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                "Title",
+                parent=styles["Heading1"],
+                fontSize=20,
+                textColor=colors.HexColor("#1e40af"),
+                spaceAfter=15,
+            )
+            section_style = ParagraphStyle(
+                "Section",
+                parent=styles["Heading2"],
+                fontSize=13,
+                textColor=colors.HexColor("#1e40af"),
+                spaceBefore=12,
+                spaceAfter=8,
+            )
+            table_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+            ]
+
+            elements = [
+                Paragraph(f"Stop Reason Analysis - {rr.site_code}", title_style),
+                Paragraph(
+                    f"<b>Period:</b> {dt_from.strftime('%d %b %Y')} to {dt_to.strftime('%d %b %Y')}",
+                    styles["Normal"],
+                ),
+                Paragraph(f"<b>Total Stops:</b> {len(stops)}", styles["Normal"]),
+                Spacer(1, 15),
+            ]
+
+            # By Frequency
+            elements.append(Paragraph("Top Reasons by Frequency", section_style))
+            total_stops = len(stops)
+            freq_data = [["Rank", "Reason", "Count", "% of Total"]]
+            cumulative = 0
+            for i, (reason, cnt) in enumerate(reason_freq.most_common(15), 1):
+                pct = cnt / total_stops * 100 if total_stops else 0
+                cumulative += pct
+                freq_data.append([str(i), reason[:40], str(cnt), f"{pct:.1f}%"])
+            elements.append(Table(freq_data, colWidths=[40, 220, 60, 80]))
+            elements[-1].setStyle(TableStyle(table_style))
+            elements.append(Spacer(1, 15))
+
+            # By Downtime
+            elements.append(Paragraph("Top Reasons by Downtime", section_style))
+            sorted_by_down = sorted(reason_downtime.items(), key=lambda x: x[1], reverse=True)[:15]
+            total_down = sum(reason_downtime.values())
+            down_data = [["Rank", "Reason", "Downtime (Min)", "% of Total"]]
+            for i, (reason, mins) in enumerate(sorted_by_down, 1):
+                pct = mins / total_down * 100 if total_down else 0
+                down_data.append([str(i), reason[:40], f"{mins:.0f}", f"{pct:.1f}%"])
+            elements.append(Table(down_data, colWidths=[40, 220, 100, 80]))
+            elements[-1].setStyle(TableStyle(table_style))
+
+            doc.build(elements)
+
+        elif report_type == "personnel_performance":
+            # Generate Excel for maintenance personnel metrics
+            from collections import defaultdict
+
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Personnel_Performance_{rr.site_code}_{date_str}.xlsx"
+            file_path = os.path.join(vault_root, filename)
+
+            filter_user = filters.get("user_id")
+
+            tickets = (
+                db.execute(
+                    select(Ticket).where(
+                        Ticket.site_code == rr.site_code,
+                        Ticket.created_at_utc >= dt_from,
+                        Ticket.created_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            if filter_user:
+                tickets = [t for t in tickets if t.assigned_to_user_id == filter_user]
+
+            user_stats = defaultdict(lambda: {"assigned": 0, "closed": 0, "resolution_times": []})
+            for t in tickets:
+                user = t.assigned_to_user_id or "Unassigned"
+                user_stats[user]["assigned"] += 1
+                if t.status == "CLOSED":
+                    user_stats[user]["closed"] += 1
+                    if t.resolved_at_utc and t.created_at_utc:
+                        user_stats[user]["resolution_times"].append(
+                            (t.resolved_at_utc - t.created_at_utc).total_seconds() / 3600
+                        )
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Personnel Performance"
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="7C3AED", end_color="7C3AED", fill_type="solid")
+
+            headers = [
+                "User ID",
+                "Tickets Assigned",
+                "Tickets Closed",
+                "Resolution Rate %",
+                "Avg Resolution Time (Hours)",
+            ]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+
+            row_idx = 2
+            for user, stats in sorted(
+                user_stats.items(), key=lambda x: x[1]["assigned"], reverse=True
+            ):
+                res_rate = stats["closed"] / stats["assigned"] * 100 if stats["assigned"] else 0
+                avg_res = (
+                    sum(stats["resolution_times"]) / len(stats["resolution_times"])
+                    if stats["resolution_times"]
+                    else 0
+                )
+                ws.cell(row=row_idx, column=1, value=user)
+                ws.cell(row=row_idx, column=2, value=stats["assigned"])
+                ws.cell(row=row_idx, column=3, value=stats["closed"])
+                ws.cell(row=row_idx, column=4, value=round(res_rate, 1))
+                ws.cell(row=row_idx, column=5, value=round(avg_res, 1))
+                row_idx += 1
+
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 35)
+
+            wb.save(file_path)
+
+        elif report_type == "critical_asset":
+            # Generate PDF for critical asset focus
+            from collections import defaultdict
+
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Critical_Asset_{rr.site_code}_{date_str}.pdf"
+            file_path = os.path.join(vault_root, filename)
+
+            critical_assets = (
+                db.execute(
+                    select(Asset).where(
+                        Asset.site_code == rr.site_code,
+                        Asset.is_active.is_(True),
+                        Asset.is_critical.is_(True),
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            stops = (
+                db.execute(
+                    select(StopQueue).where(
+                        StopQueue.site_code == rr.site_code,
+                        StopQueue.opened_at_utc >= dt_from,
+                        StopQueue.opened_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            tickets = (
+                db.execute(
+                    select(Ticket).where(
+                        Ticket.site_code == rr.site_code,
+                        Ticket.created_at_utc >= dt_from,
+                        Ticket.created_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            critical_ids = {a.id for a in critical_assets}
+            critical_stops = [s for s in stops if s.asset_id in critical_ids]
+            critical_tickets = [t for t in tickets if t.asset_id in critical_ids]
+
+            asset_stats = defaultdict(
+                lambda: {"name": "", "stops": 0, "downtime": 0, "tickets": 0, "open_tickets": 0}
+            )
+            for a in critical_assets:
+                asset_stats[a.id]["name"] = a.name
+
+            for s in critical_stops:
+                asset_stats[s.asset_id]["stops"] += 1
+                dur = ((s.closed_at_utc or dt_to) - s.opened_at_utc).total_seconds() / 60
+                asset_stats[s.asset_id]["downtime"] += dur
+
+            for t in critical_tickets:
+                asset_stats[t.asset_id]["tickets"] += 1
+                if t.status != "CLOSED":
+                    asset_stats[t.asset_id]["open_tickets"] += 1
+
+            doc = SimpleDocTemplate(file_path, pagesize=A4)
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                "Title",
+                parent=styles["Heading1"],
+                fontSize=20,
+                textColor=colors.HexColor("#DC2626"),
+                spaceAfter=15,
+            )
+            section_style = ParagraphStyle(
+                "Section",
+                parent=styles["Heading2"],
+                fontSize=13,
+                textColor=colors.HexColor("#DC2626"),
+                spaceBefore=12,
+                spaceAfter=8,
+            )
+            table_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#DC2626")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 9),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#fecaca")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#fef2f2")]),
+            ]
+
+            elements = [
+                Paragraph(f"Critical Asset Report - {rr.site_code}", title_style),
+                Paragraph(
+                    f"<b>Period:</b> {dt_from.strftime('%d %b %Y')} to {dt_to.strftime('%d %b %Y')}",
+                    styles["Normal"],
+                ),
+                Spacer(1, 15),
+                Paragraph("Summary", section_style),
+            ]
+
+            summary_data = [
+                ["Metric", "Value"],
+                ["Critical Assets Monitored", str(len(critical_assets))],
+                ["Total Stops on Critical", str(len(critical_stops))],
+                [
+                    "Total Downtime (Hours)",
+                    f"{sum(s['downtime'] for s in asset_stats.values()) / 60:.1f}",
+                ],
+                [
+                    "Open Tickets on Critical",
+                    str(sum(s["open_tickets"] for s in asset_stats.values())),
+                ],
+            ]
+            elements.append(Table(summary_data, colWidths=[200, 150]))
+            elements[-1].setStyle(TableStyle(table_style))
+            elements.append(Spacer(1, 15))
+
+            elements.append(Paragraph("Critical Asset Details", section_style))
+            detail_data = [["Asset ID", "Name", "Stops", "Downtime (Min)", "Tickets", "Open"]]
+            for aid, s in sorted(asset_stats.items(), key=lambda x: x[1]["downtime"], reverse=True):
+                detail_data.append(
+                    [
+                        aid,
+                        s["name"][:25],
+                        str(s["stops"]),
+                        f"{s['downtime']:.0f}",
+                        str(s["tickets"]),
+                        str(s["open_tickets"]),
+                    ]
+                )
+
+            if len(detail_data) == 1:
+                detail_data.append(["No critical assets", "-", "-", "-", "-", "-"])
+
+            elements.append(Table(detail_data, colWidths=[80, 130, 50, 80, 50, 40]))
+            elements[-1].setStyle(TableStyle(table_style))
+
+            doc.build(elements)
+
+        elif report_type == "department_performance":
+            # Generate Excel for department metrics
+            from collections import defaultdict
+
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Department_Performance_{rr.site_code}_{date_str}.xlsx"
+            file_path = os.path.join(vault_root, filename)
+
+            tickets = (
+                db.execute(
+                    select(Ticket).where(
+                        Ticket.site_code == rr.site_code,
+                        Ticket.created_at_utc >= dt_from,
+                        Ticket.created_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            dept_stats = defaultdict(
+                lambda: {"total": 0, "closed": 0, "sla_met": 0, "resolution_times": []}
+            )
+            for t in tickets:
+                dept = t.assigned_dept or "Unassigned"
+                dept_stats[dept]["total"] += 1
+                if t.status == "CLOSED":
+                    dept_stats[dept]["closed"] += 1
+                    if (
+                        t.sla_due_at_utc
+                        and t.resolved_at_utc
+                        and t.resolved_at_utc <= t.sla_due_at_utc
+                    ):
+                        dept_stats[dept]["sla_met"] += 1
+                    if t.resolved_at_utc and t.created_at_utc:
+                        dept_stats[dept]["resolution_times"].append(
+                            (t.resolved_at_utc - t.created_at_utc).total_seconds() / 3600
+                        )
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Department Performance"
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="0891B2", end_color="0891B2", fill_type="solid")
+
+            headers = [
+                "Department",
+                "Total Tickets",
+                "Closed",
+                "Resolution Rate %",
+                "SLA Compliance %",
+                "Avg MTTR (Hours)",
+            ]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+
+            row_idx = 2
+            for dept, stats in sorted(
+                dept_stats.items(), key=lambda x: x[1]["total"], reverse=True
+            ):
+                res_rate = stats["closed"] / stats["total"] * 100 if stats["total"] else 0
+                sla_rate = stats["sla_met"] / stats["closed"] * 100 if stats["closed"] else 0
+                avg_mttr = (
+                    sum(stats["resolution_times"]) / len(stats["resolution_times"])
+                    if stats["resolution_times"]
+                    else 0
+                )
+                ws.cell(row=row_idx, column=1, value=dept)
+                ws.cell(row=row_idx, column=2, value=stats["total"])
+                ws.cell(row=row_idx, column=3, value=stats["closed"])
+                ws.cell(row=row_idx, column=4, value=round(res_rate, 1))
+                ws.cell(row=row_idx, column=5, value=round(sla_rate, 1))
+                ws.cell(row=row_idx, column=6, value=round(avg_mttr, 1))
+                row_idx += 1
+
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 35)
+
+            wb.save(file_path)
+
+        elif report_type == "audit_trail":
+            # Generate Excel for audit log export
+            from openpyxl import Workbook
+            from openpyxl.styles import Alignment, Font, PatternFill
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Audit_Trail_{rr.site_code}_{date_str}.xlsx"
+            file_path = os.path.join(vault_root, filename)
+
+            filter_entity = filters.get("entity_type")
+            filter_user = filters.get("user_id")
+
+            audit_query = select(AuditLog).where(
+                AuditLog.site_code == rr.site_code,
+                AuditLog.created_at_utc >= dt_from,
+                AuditLog.created_at_utc <= dt_to,
+            )
+            if filter_entity:
+                audit_query = audit_query.where(AuditLog.entity_type == filter_entity)
+            if filter_user:
+                audit_query = audit_query.where(AuditLog.actor_user_id == filter_user)
+
+            logs = db.execute(audit_query.order_by(AuditLog.created_at_utc.desc())).scalars().all()
+
+            wb = Workbook()
+            ws = wb.active
+            ws.title = "Audit Trail"
+            header_font = Font(bold=True, color="FFFFFF")
+            header_fill = PatternFill(start_color="4B5563", end_color="4B5563", fill_type="solid")
+
+            headers = ["Timestamp", "User", "Action", "Entity Type", "Entity ID", "Details"]
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = Alignment(horizontal="center")
+
+            import json
+
+            for row_idx, log in enumerate(logs, 2):
+                ws.cell(
+                    row=row_idx, column=1, value=log.created_at_utc.strftime("%Y-%m-%d %H:%M:%S")
+                )
+                ws.cell(row=row_idx, column=2, value=log.actor_user_id or "SYSTEM")
+                ws.cell(row=row_idx, column=3, value=log.action)
+                ws.cell(row=row_idx, column=4, value=log.entity_type)
+                ws.cell(row=row_idx, column=5, value=log.entity_id)
+                details = (
+                    log.details_json
+                    if isinstance(log.details_json, str)
+                    else json.dumps(log.details_json)
+                )
+                ws.cell(row=row_idx, column=6, value=details[:200])
+
+            for col in ws.columns:
+                max_len = max(len(str(c.value or "")) for c in col)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 2, 50)
+
+            wb.save(file_path)
+
+        elif report_type == "trend_analysis":
+            # Generate PDF for trend analysis
+            from collections import defaultdict
+
+            from reportlab.lib import colors
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+            from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+            date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
+            filename = f"Trend_Analysis_{rr.site_code}_{date_str}.pdf"
+            file_path = os.path.join(vault_root, filename)
+
+            stops = (
+                db.execute(
+                    select(StopQueue).where(
+                        StopQueue.site_code == rr.site_code,
+                        StopQueue.opened_at_utc >= dt_from,
+                        StopQueue.opened_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            tickets = (
+                db.execute(
+                    select(Ticket).where(
+                        Ticket.site_code == rr.site_code,
+                        Ticket.created_at_utc >= dt_from,
+                        Ticket.created_at_utc <= dt_to,
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+            # Daily aggregation
+            daily_stops = defaultdict(int)
+            daily_downtime = defaultdict(float)
+            daily_tickets = defaultdict(int)
+            daily_closed = defaultdict(int)
+
+            for s in stops:
+                day = s.opened_at_utc.strftime("%Y-%m-%d")
+                daily_stops[day] += 1
+                dur = ((s.closed_at_utc or dt_to) - s.opened_at_utc).total_seconds() / 60
+                daily_downtime[day] += dur
+
+            for t in tickets:
+                day = t.created_at_utc.strftime("%Y-%m-%d")
+                daily_tickets[day] += 1
+                if t.status == "CLOSED":
+                    daily_closed[day] += 1
+
+            all_days = sorted(set(daily_stops.keys()) | set(daily_tickets.keys()))
+
+            doc = SimpleDocTemplate(file_path, pagesize=A4)
+            styles = getSampleStyleSheet()
+            title_style = ParagraphStyle(
+                "Title",
+                parent=styles["Heading1"],
+                fontSize=20,
+                textColor=colors.HexColor("#1e40af"),
+                spaceAfter=15,
+            )
+            section_style = ParagraphStyle(
+                "Section",
+                parent=styles["Heading2"],
+                fontSize=13,
+                textColor=colors.HexColor("#1e40af"),
+                spaceBefore=12,
+                spaceAfter=8,
+            )
+            table_style = [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#2563EB")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTSIZE", (0, 0), (-1, -1), 8),
+                ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#e5e7eb")),
+                ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f9fafb")]),
+            ]
+
+            elements = [
+                Paragraph(f"Trend Analysis Report - {rr.site_code}", title_style),
+                Paragraph(
+                    f"<b>Period:</b> {dt_from.strftime('%d %b %Y')} to {dt_to.strftime('%d %b %Y')}",
+                    styles["Normal"],
+                ),
+                Paragraph(f"<b>Days Analyzed:</b> {len(all_days)}", styles["Normal"]),
+                Spacer(1, 15),
+                Paragraph("Overall Trends", section_style),
+            ]
+
+            total_stops = sum(daily_stops.values())
+            total_tickets = sum(daily_tickets.values())
+            avg_daily_stops = total_stops / len(all_days) if all_days else 0
+            avg_daily_tickets = total_tickets / len(all_days) if all_days else 0
+
+            summary_data = [
+                ["Metric", "Value"],
+                ["Total Days", str(len(all_days))],
+                ["Total Stops", str(total_stops)],
+                ["Avg Stops/Day", f"{avg_daily_stops:.1f}"],
+                ["Total Tickets", str(total_tickets)],
+                ["Avg Tickets/Day", f"{avg_daily_tickets:.1f}"],
+            ]
+            elements.append(Table(summary_data, colWidths=[180, 120]))
+            elements[-1].setStyle(TableStyle(table_style))
+            elements.append(Spacer(1, 15))
+
+            elements.append(Paragraph("Daily Breakdown", section_style))
+            trend_data = [["Date", "Stops", "Downtime (Min)", "Tickets", "Closed"]]
+            for day in all_days[-30:]:  # Last 30 days max
+                trend_data.append(
+                    [
+                        day,
+                        str(daily_stops.get(day, 0)),
+                        f"{daily_downtime.get(day, 0):.0f}",
+                        str(daily_tickets.get(day, 0)),
+                        str(daily_closed.get(day, 0)),
+                    ]
+                )
+
+            if len(trend_data) == 1:
+                trend_data.append(["No data", "0", "0", "0", "0"])
+
+            elements.append(Table(trend_data, colWidths=[80, 50, 80, 50, 50]))
+            elements[-1].setStyle(TableStyle(table_style))
+
+            doc.build(elements)
+
         else:
-            # Generate PDF for daily_summary
+            # Generate PDF for daily_summary (default)
             from reportlab.lib import colors
             from reportlab.lib.pagesizes import A4
             from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -911,8 +1859,6 @@ def report_request_create_and_generate_csv(
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
             filename = f"Summary_{rr.site_code}_{date_str}.pdf"
             file_path = os.path.join(vault_root, filename)
-
-            from sqlalchemy import select
 
             stops = (
                 db.execute(

@@ -9,12 +9,50 @@ from sqlalchemy import select
 
 from apps.plant_backend import services
 from apps.plant_backend.deps import require_perm
-from apps.plant_backend.models import ReportRequest
+from apps.plant_backend.models import Asset, ReportRequest, Ticket, User
 from common_core.config import settings
 from common_core.db import PlantSessionLocal
 from common_core.report_tokens import sign_download_token, verify_download_token
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+@router.get("/filter-options")
+def get_filter_options(user=Depends(require_perm("report.view"))):
+    """Return available filter options for reports (assets, users, departments)."""
+    db = PlantSessionLocal()
+    try:
+        # Get assets
+        assets = db.execute(
+            select(Asset.id, Asset.name, Asset.is_critical)
+            .where(Asset.site_code == settings.plant_site_code, Asset.is_active.is_(True))
+            .order_by(Asset.name)
+        ).all()
+
+        # Get users
+        users = db.execute(select(User.id, User.full_name)).all()
+
+        # Get departments from tickets
+        depts = (
+            db.execute(
+                select(Ticket.assigned_dept)
+                .where(
+                    Ticket.site_code == settings.plant_site_code, Ticket.assigned_dept.isnot(None)
+                )
+                .distinct()
+            )
+            .scalars()
+            .all()
+        )
+
+        return {
+            "assets": [{"id": a.id, "name": a.name, "is_critical": a.is_critical} for a in assets],
+            "users": [{"id": u.id, "name": u.full_name or u.id} for u in users],
+            "departments": [d for d in depts if d],
+            "entity_types": ["ticket", "stop_queue", "asset", "report_request", "master_item"],
+        }
+    finally:
+        db.close()
 
 
 class ReportRequestIn(BaseModel):
@@ -113,7 +151,7 @@ def issue(body: dict, user=Depends(require_perm("report.view"))):
 
 
 @router.get("/download")
-def download(token: str):
+def download(token: str, view: bool = False):
     try:
         payload = verify_download_token(token)
     except Exception as e:
@@ -124,7 +162,25 @@ def download(token: str):
         raise HTTPException(status_code=400, detail="bad path")
     if not os.path.exists(full):
         raise HTTPException(status_code=404, detail="not found")
-    return FileResponse(full, filename=os.path.basename(full))
+
+    filename = os.path.basename(full)
+    # Determine media type
+    if filename.lower().endswith(".pdf"):
+        media_type = "application/pdf"
+    elif filename.lower().endswith(".xlsx"):
+        media_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    else:
+        media_type = "application/octet-stream"
+
+    # View mode: try to open inline (works for PDFs, may prompt for Excel)
+    if view:
+        return FileResponse(
+            full,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+        )
+    else:
+        return FileResponse(full, filename=filename, media_type=media_type)
 
 
 @router.get("/list-vault")
