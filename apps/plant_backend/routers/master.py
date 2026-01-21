@@ -473,7 +473,9 @@ def set_config(
                 "whatsappEnabled",
                 "whatsappTargetPhone",
                 "whatsappMessageTemplate",
+                "whatsappMessageTemplate",
                 "whatsappCloseMessageTemplate",
+                "whatsappHeartbeat",
             ]:
                 continue
 

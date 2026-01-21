@@ -26,6 +26,7 @@ def main() -> None:
 
     last_rollup = 0.0
     last_report_check = 0.0
+    last_sla_check = 0.0
 
     while True:
         try:
@@ -77,6 +78,27 @@ def main() -> None:
             except Exception as e:
                 log.error("report_archive_failed", extra={"err": str(e)})
                 send_critical_alert("plant_worker_archive_fail", str(e))
+
+        # Check for SLA warnings every 5 minutes
+        now = time.time()
+        if now - last_sla_check > 300:
+            try:
+                from apps.plant_backend.services import check_sla_warnings
+                from common_core.db import PlantSessionLocal
+
+                db = PlantSessionLocal()
+                try:
+                    warned = check_sla_warnings(db)
+                    if warned:
+                        log.info(
+                            "sla_warnings_sent",
+                            extra={"component": "plant_worker", "count": warned},
+                        )
+                finally:
+                    db.close()
+                last_sla_check = now
+            except Exception as e:
+                log.error("sla_warning_check_failed", extra={"err": str(e)})
 
         time.sleep(2)
 

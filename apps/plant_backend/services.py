@@ -445,12 +445,17 @@ def create_ticket(
                 .replace("{site_code}", str(settings.plant_site_code))
             )
 
+            # Calculate SLA state for conditional routing
+            # For newly created tickets, SLA is always OK (just created)
+            sla_state = "OK"  # New tickets start with OK state
+
             db.add(
                 WhatsAppQueue(
                     ticket_id=tid,
                     phone_number=str(ws_phone.config_value),
                     message=msg,
                     status="PENDING",
+                    sla_state=sla_state,
                     created_at_utc=now,
                 )
             )
@@ -531,12 +536,21 @@ def close_ticket(
                 .replace("{site_code}", str(settings.plant_site_code))
             )
 
+            # Calculate SLA state at closure
+            sla_state = "OK"  # Default
+            if t.sla_due_at_utc:
+                if t.resolved_at_utc and t.resolved_at_utc > t.sla_due_at_utc:
+                    sla_state = "BREACHED"
+                elif t.resolved_at_utc and t.resolved_at_utc <= t.sla_due_at_utc:
+                    sla_state = "OK"
+
             db.add(
                 WhatsAppQueue(
                     ticket_id=ticket_id,
                     phone_number=str(ws_phone.config_value),
                     message=msg,
                     status="PENDING",
+                    sla_state=sla_state,
                     created_at_utc=_now(),
                 )
             )
@@ -2158,3 +2172,86 @@ def report_request_create_and_generate_csv(
         )
 
     return rr
+
+
+def check_sla_warnings(db) -> int:
+    """
+    Check for tickets approaching SLA deadline and queue warning alerts.
+    Call this periodically from the plant_worker.
+    Returns the number of warnings sent.
+    """
+    import logging
+
+    log = logging.getLogger("assetiq")
+
+    now = _now()
+    warning_threshold = now + timedelta(hours=1)  # Warning if SLA due within 1 hour
+
+    # Find open tickets approaching SLA that haven't had warning sent
+    from sqlalchemy import and_
+
+    tickets = (
+        db.execute(
+            select(Ticket).where(
+                and_(
+                    Ticket.status.in_(["OPEN", "ACKNOWLEDGED", "ACK"]),
+                    Ticket.sla_due_at_utc.isnot(None),
+                    Ticket.sla_due_at_utc <= warning_threshold,
+                    Ticket.sla_due_at_utc > now,  # Not yet breached
+                    Ticket.sla_warning_sent.is_(False),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not tickets:
+        return 0
+
+    # Check if WhatsApp is enabled
+    ws_enabled = db.get(SystemConfig, "whatsappEnabled")
+    ws_phone = db.get(SystemConfig, "whatsappTargetPhone")
+
+    if not (ws_enabled and ws_enabled.config_value is True and ws_phone and ws_phone.config_value):
+        return 0
+
+    count = 0
+    for t in tickets:
+        try:
+            # Calculate remaining time
+            remaining = t.sla_due_at_utc - now
+            remaining_mins = int(remaining.total_seconds() / 60)
+
+            # Build warning message
+            msg = (
+                f"⚠️ SLA Warning\n"
+                f"Ticket: {t.id}\n"
+                f"Asset: {t.asset_id}\n"
+                f"Title: {t.title}\n"
+                f"Priority: {t.priority}\n"
+                f"Time Remaining: {remaining_mins} minutes\n"
+                f"SLA Due: {t.sla_due_at_utc.strftime('%H:%M')}"
+            )
+
+            db.add(
+                WhatsAppQueue(
+                    ticket_id=t.id,
+                    phone_number=str(ws_phone.config_value),
+                    message=msg,
+                    status="PENDING",
+                    sla_state="WARNING",
+                    created_at_utc=now,
+                )
+            )
+
+            # Mark warning as sent
+            t.sla_warning_sent = True
+            count += 1
+
+        except Exception as e:
+            log.error(f"Failed to queue SLA warning for ticket {t.id}: {e}")
+
+    db.commit()
+    log.info(f"sla_warnings_queued count={count}")
+    return count

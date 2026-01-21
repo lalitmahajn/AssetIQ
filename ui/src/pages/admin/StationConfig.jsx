@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import QRCode from "react-qr-code";
 import { apiGet, apiPost } from "../../api";
 
 export default function StationConfig() {
@@ -9,11 +10,14 @@ export default function StationConfig() {
         whatsappEnabled: false,
         whatsappTargetPhone: "",
         whatsappMessageTemplate: "",
-        whatsappCloseMessageTemplate: ""
+        whatsappCloseMessageTemplate: "",
+        whatsappHeartbeat: null,
+        whatsappQRCode: null
     });
 
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState("");
+    const [showQRModal, setShowQRModal] = useState(false);
 
     useEffect(() => {
         loadConfig();
@@ -110,6 +114,96 @@ export default function StationConfig() {
                         <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
                         WhatsApp Alerts
                     </h4>
+
+                    {/* Worker Status Indicator */}
+                    <div className="bg-gray-50 p-3 rounded-md mb-4 border border-gray-200">
+                        <div className="flex items-center justify-between">
+                            <span className="text-xs font-medium text-gray-500">Worker Status</span>
+                            {(() => {
+                                let statusFn = () => <span className="text-xs text-gray-400">Checking...</span>;
+                                if (config.whatsappHeartbeat) {
+                                    try {
+                                        const hb = typeof config.whatsappHeartbeat === 'string' 
+                                            ? JSON.parse(config.whatsappHeartbeat) 
+                                            : config.whatsappHeartbeat;
+                                        
+                                        const now = Date.now();
+                                        const diff = (now - hb.ts) / 1000; // seconds
+                                        
+                                        if (diff < 120) { // < 2 mins
+                                            if (hb.state === 'CONNECTED') {
+                                                statusFn = () => (
+                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                                        Online
+                                                    </span>
+                                                );
+                                            } else {
+                                                statusFn = () => (
+                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                                                        {hb.state || "Connecting..."}
+                                                    </span>
+                                                );
+                                            }
+                                        } else {
+                                             statusFn = () => (
+                                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                                    Offline
+                                                </span>
+                                            );
+                                        }
+                                    } catch (e) {
+                                        console.error("Pulse error", e);
+                                    }
+                                } else {
+                                     statusFn = () => (
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                                            Unknown
+                                        </span>
+                                    );
+                                }
+                                return statusFn();
+                            })()}
+                        </div>
+                         <p className="text-[10px] text-gray-400 mt-1">
+                            Checks connectivity every 30s. If "Offline" or "DISCONNECTED", check Docker logs.
+                        </p>
+                        {/* Show QR Code Button when not connected */}
+                        {config.whatsappQRCode && (
+                            <button
+                                onClick={() => setShowQRModal(true)}
+                                className="mt-2 w-full px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                            >
+                                📱 Show QR Code to Connect
+                            </button>
+                        )}
+                    </div>
+
+                    {/* QR Code Modal */}
+                    {showQRModal && config.whatsappQRCode && (
+                        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+                            <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4 shadow-xl">
+                                <h3 className="text-lg font-semibold text-gray-800 mb-2">Scan QR Code</h3>
+                                <p className="text-xs text-gray-500 mb-4">Open WhatsApp on your phone → Settings → Linked Devices → Link a Device → Scan this code.</p>
+                                <div className="bg-white p-6 rounded border flex justify-center">
+                                    <QRCode 
+                                        value={typeof config.whatsappQRCode === 'string' ? config.whatsappQRCode : JSON.stringify(config.whatsappQRCode)}
+                                        size={280}
+                                        level="M"
+                                    />
+                                </div>
+                                <button
+                                    onClick={() => { setShowQRModal(false); loadConfig(); }}
+                                    className="mt-4 w-full px-4 py-2 text-sm font-medium text-white bg-gray-800 rounded-md hover:bg-gray-700"
+                                >
+                                    Close & Refresh Status
+                                </button>
+                            </div>
+                        </div>
+                    )}
                     
                     <div className="flex items-center justify-between mb-4">
                         <span className="text-gray-700 text-sm">Enable WhatsApp for All Tickets</span>
@@ -122,16 +216,18 @@ export default function StationConfig() {
                     </div>
 
                     <div>
-                        <label className="block text-sm font-medium text-gray-700">WhatsApp Alert Target (Phone or Group Name)</label>
+                        <label className="block text-sm font-medium text-gray-700">WhatsApp Alert Targets</label>
                         <input
                             type="text"
-                            placeholder="e.g. +919876543210 or 'AssetIQ Alerts'"
+                            placeholder="e.g. P01, Escalation:BREACHED, +919876543210"
                             className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
                             value={config.whatsappTargetPhone}
                             onChange={e => handleChange('whatsappTargetPhone', e.target.value)}
                         />
                         <p className="text-[10px] text-gray-400 mt-1 italic">
-                            Enter a full phone number with country code, or the <strong>exact name</strong> of a WhatsApp group.
+                            <strong>Format:</strong> Comma-separated. Use <code>GroupName</code> for all alerts, or <code>GroupName:STATE</code> for conditional routing.<br/>
+                            <strong>States:</strong> <code>OK</code> (on-time), <code>WARNING</code> (near SLA), <code>BREACHED</code> (overdue).<br/>
+                            <strong>Example:</strong> <code>General:OK, Supervisors:WARNING, Escalation:BREACHED</code>
                         </p>
                     </div>
 

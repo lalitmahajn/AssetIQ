@@ -78,6 +78,7 @@ class Ticket(Base):
     resolved_at_utc = Column(DateTime, nullable=True)
     resolution_reason = Column(String(64), nullable=True)  # Root cause code
     close_note = Column(Text, nullable=True)
+    sla_warning_sent = Column(Boolean, nullable=False, default=False)  # Track if warning alert sent
 
 
 class TicketActivity(Base):
@@ -120,9 +121,10 @@ class WhatsAppQueue(Base):
     __tablename__ = "whatsapp_queue"
     id = Column(Integer, primary_key=True, autoincrement=True)
     ticket_id = Column(String(64), nullable=False, index=True)
-    phone_number = Column(String(32), nullable=False)
+    phone_number = Column(String(512), nullable=False)  # Increased for multiple targets
     message = Column(Text, nullable=False)
     status = Column(String(32), nullable=False, index=True, default="PENDING")
+    sla_state = Column(String(16), nullable=True)  # OK, WARNING, BREACHED
     created_at_utc = Column(DateTime, nullable=False)
     sent_at_utc = Column(DateTime, nullable=True)
 

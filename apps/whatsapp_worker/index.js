@@ -55,14 +55,37 @@ const client = new Client({
     }
 });
 
-client.on('qr', (qr) => {
+client.on('qr', async (qr) => {
     console.log('--- SCAN QR CODE WITH WHATSAPP ---');
     qrcode.generate(qr, { small: true });
+    
+    // Save QR code to database for UI access
+    try {
+        const query = `
+            INSERT INTO system_config (config_key, config_value, updated_at_utc)
+            VALUES ('whatsappQRCode', $1::jsonb, NOW())
+            ON CONFLICT (config_key) 
+            DO UPDATE SET config_value = $1::jsonb, updated_at_utc = NOW();
+        `;
+        await pool.query(query, [JSON.stringify(qr)]);
+        console.log('QR code saved to database for UI access.');
+    } catch (err) {
+        console.error('Failed to save QR code:', err.message);
+    }
 });
 
-client.on('ready', () => {
+client.on('ready', async () => {
     console.log('WhatsApp Client is Ready!');
+    
+    // Clear QR code from database (no longer needed)
+    try {
+        await pool.query("DELETE FROM system_config WHERE config_key = 'whatsappQRCode'");
+    } catch (err) {
+        console.error('Failed to clear QR code:', err.message);
+    }
+    
     startPolling();
+    startHeartbeat();
 });
 
 client.on('auth_failure', (msg) => {
@@ -86,40 +109,115 @@ async function startPolling() {
     }, 10000); // Every 10 seconds
 }
 
-async function processMessage(row) {
-    const { id, phone_number, message } = row;
-    try {
-        console.log(`Processing message for ${phone_number} (Queue ID: ${id})...`);
-        
-        let targetId = '';
-
-        if (phone_number.includes('@g.us') || phone_number.includes('@c.us')) {
-            targetId = phone_number;
-        } else if (/^\+?\d+$/.test(phone_number.trim())) {
-            let cleanNumber = phone_number.replace('+', '').replace(/\s/g, '');
-            targetId = `${cleanNumber}@c.us`;
-        } else {
-            // Group/Contact Name search
-            console.log(`Searching for chat named: "${phone_number}"...`);
-            const chats = await client.getChats();
-            const targetChat = chats.find(c => c.name === phone_number);
-            
-            if (!targetChat) {
-                throw new Error(`Chat not found with name: ${phone_number}`);
+async function startHeartbeat() {
+    console.log('Started heartbeat service...');
+    setInterval(async () => {
+        try {
+            let state = 'DISCONNECTED';
+            try {
+                // Get State if client is ready
+                state = await client.getState();
+                if (!state) state = 'CONNECTED'; // Sometimes returns null if connected
+            } catch (e) {
+                state = 'ERROR';
             }
-            targetId = targetChat.id._serialized;
+
+            const heartbeatData = JSON.stringify({
+                ts: Date.now(),
+                state: state
+            });
+
+            // Upsert into system_config
+            const query = `
+                INSERT INTO system_config (config_key, config_value, updated_at_utc)
+                VALUES ('whatsappHeartbeat', $1, NOW())
+                ON CONFLICT (config_key) 
+                DO UPDATE SET config_value = $1, updated_at_utc = NOW();
+            `;
+            
+            await pool.query(query, [heartbeatData]);
+            // console.log(`Heartbeat sent: ${state}`); // verbose
+        } catch (err) {
+            console.error('Heartbeat Failed:', err.message);
+        }
+    }, 30000); // Every 30 seconds
+}
+
+async function processMessage(row) {
+    const { id, phone_number, message, sla_state } = row;
+    try {
+        console.log(`Processing message (Queue ID: ${id}, SLA: ${sla_state || 'N/A'})...`);
+        
+        // Split by comma and clean up whitespace
+        const rawTargets = phone_number.split(',').map(t => t.trim()).filter(t => t.length > 0);
+        let successCount = 0;
+        let failCount = 0;
+        let skippedCount = 0;
+
+        for (const rawTarget of rawTargets) {
+            try {
+                // Parse conditional format: "GroupName:SLAState" or just "GroupName"
+                let targetName = rawTarget;
+                let requiredSlaState = null;
+                
+                if (rawTarget.includes(':')) {
+                    const parts = rawTarget.split(':');
+                    targetName = parts[0].trim();
+                    requiredSlaState = parts[1].trim().toUpperCase();
+                }
+                
+                // Check SLA condition
+                if (requiredSlaState && sla_state) {
+                    if (requiredSlaState !== sla_state.toUpperCase()) {
+                        console.log(`Skipping ${targetName} (requires ${requiredSlaState}, current: ${sla_state})`);
+                        skippedCount++;
+                        continue;
+                    }
+                }
+                
+                let targetId = '';
+
+                if (targetName.includes('@g.us') || targetName.includes('@c.us')) {
+                    targetId = targetName;
+                } else if (/^\+?\d+$/.test(targetName)) {
+                    let cleanNumber = targetName.replace('+', '').replace(/\s/g, '');
+                    targetId = `${cleanNumber}@c.us`;
+                } else {
+                    // Group/Contact Name search
+                    console.log(`Searching for chat named: "${targetName}"...`);
+                    const chats = await client.getChats();
+                    const targetChat = chats.find(c => c.name === targetName);
+                    
+                    if (!targetChat) {
+                        console.error(`Chat not found with name: ${targetName}`);
+                        failCount++;
+                        continue;
+                    }
+                    targetId = targetChat.id._serialized;
+                }
+
+                await client.sendMessage(targetId, message);
+                console.log(`Successfully sent message to ${targetId}`);
+                successCount++;
+            } catch (innerErr) {
+                console.error(`Failed to send to ${rawTarget}:`, innerErr.message);
+                failCount++;
+            }
         }
 
-        // Revert to client.sendMessage (more resilient to 'markedUnread' errors in some versions)
-        await client.sendMessage(targetId, message);
-        
-        await pool.query(
-            "UPDATE whatsapp_queue SET status = 'SENT', sent_at_utc = NOW() WHERE id = $1",
-            [id]
-        );
-        console.log(`Successfully sent message ${id} to ${targetId}`);
+        if (successCount > 0 || skippedCount === rawTargets.length) {
+            // Mark as SENT if at least one succeeded, or all were intentionally skipped
+            await pool.query(
+                "UPDATE whatsapp_queue SET status = 'SENT', sent_at_utc = NOW() WHERE id = $1",
+                [id]
+            );
+            console.log(`Message ${id} complete. Sent: ${successCount}, Failed: ${failCount}, Skipped: ${skippedCount}`);
+        } else {
+            throw new Error(`Failed to send to all ${rawTargets.length} targets.`);
+        }
+
     } catch (err) {
-        console.error(`Failed to send message ${id}:`, err.message);
+        console.error(`Failed to process message ${id}:`, err.message);
         await pool.query(
             "UPDATE whatsapp_queue SET status = 'FAILED' WHERE id = $1",
             [id]

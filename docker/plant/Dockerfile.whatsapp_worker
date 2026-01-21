@@ -19,6 +19,7 @@ ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
 WORKDIR /app
 
 COPY apps/whatsapp_worker/package*.json ./
+COPY apps/whatsapp_worker/wa_lib ./wa_lib
 RUN npm install
 
 COPY apps/whatsapp_worker/ .
