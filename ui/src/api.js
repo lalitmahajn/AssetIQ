@@ -35,6 +35,37 @@ export async function apiPost(path, body) {
   return res.json();
 }
 
+export async function apiPut(path, body) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    window.dispatchEvent(new Event("auth:error"));
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
+export async function apiDelete(path) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "DELETE",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    window.dispatchEvent(new Event("auth:error"));
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export function setRoles(roles) { localStorage.setItem('assetiq_roles', JSON.stringify(roles || [])); }
 export function getRoles() { try { return JSON.parse(localStorage.getItem('assetiq_roles') || '[]'); } catch (e) { return []; } }
 

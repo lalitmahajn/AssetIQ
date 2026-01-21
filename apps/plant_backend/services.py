@@ -130,6 +130,7 @@ def open_stop(
     actor_user_id: str | None,
     actor_station_code: str | None,
     request_id: str | None,
+    extra_context: dict = None,
 ):
     stop_id = _new_id("STOP")
     now = _now()
@@ -143,6 +144,7 @@ def open_stop(
             opened_at_utc=now,
             closed_at_utc=None,
             resolution_text=None,
+            live_context_json=extra_context,
         )
     )
 

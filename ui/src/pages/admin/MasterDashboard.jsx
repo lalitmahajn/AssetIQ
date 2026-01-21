@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from "react";
+import { useState } from "react";
 import { getRoles } from "../../api";
-import UserList from "./UserList";
-import MastersManager from "./MastersManager";
-import SuggestionsReview from "./SuggestionsReview";
+import PLCConfiguration from "../PLCConfiguration";
 import AssetManager from "./AssetManager";
 import AuditLogViewer from "./AuditLogViewer";
+import MastersManager from "./MastersManager";
 import StationConfig from "./StationConfig";
+import SuggestionsReview from "./SuggestionsReview";
+import UserList from "./UserList";
 
 export default function MasterDashboard() {
     const roles = getRoles();
@@ -20,6 +21,7 @@ export default function MasterDashboard() {
         { id: "learning", label: "Self-Learning", allowed: isAdmin || isSupervisor },
         { id: "audit", label: "Audit Logs", allowed: isAdmin },
         { id: "stations", label: "Station Config", allowed: isAdmin },
+        { id: "plc", label: "PLC Configuration", allowed: isAdmin },
     ];
 
     const visibleTabs = allTabs.filter(t => t.allowed);
@@ -59,7 +61,9 @@ export default function MasterDashboard() {
                 {tab === "masters" && <MastersManager />}
                 {tab === "learning" && <SuggestionsReview />}
                 {tab === "audit" && <AuditLogViewer />}
+                {tab === "audit" && <AuditLogViewer />}
                 {tab === "stations" && <StationConfig />}
+                {tab === "plc" && <PLCConfiguration />}
             </div>
         </div>
     );

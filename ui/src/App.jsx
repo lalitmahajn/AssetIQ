@@ -140,6 +140,7 @@ export default function App() {
             >
               Insights
             </button>
+            {/* PLC Config moved to Admin Dashboard */}
             <button
               onClick={() => setTab("admin")}
               className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${tab === "admin" ? "bg-purple-100 text-purple-700" : "text-gray-600 hover:bg-gray-100"}`}

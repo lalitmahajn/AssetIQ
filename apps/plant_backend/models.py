@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import JSON, Boolean, Column, DateTime, Integer, String, Text
+from sqlalchemy import JSON, Boolean, Column, DateTime, Float, Integer, String, Text
 
 from common_core.db import Base
 
@@ -23,6 +23,41 @@ class StopQueue(Base):
     opened_at_utc = Column(DateTime, nullable=False)
     closed_at_utc = Column(DateTime, nullable=True)
     resolution_text = Column(Text, nullable=True)
+    live_context_json = Column(JSON, nullable=True)
+
+
+class PLCConfig(Base):
+    __tablename__ = "plc_config"
+    id = Column(String(64), primary_key=True)
+    site_code = Column(String(16), nullable=False, index=True)
+    name = Column(String(128), nullable=False)
+    protocol = Column(String(32), nullable=False)  # MODBUS_TCP, MODBUS_RTU
+    ip_address = Column(String(128), nullable=True)
+    port = Column(Integer, nullable=True)
+    serial_port = Column(String(128), nullable=True)  # COM1, /dev/ttyUSB0
+    baud_rate = Column(Integer, nullable=True, default=9600)
+    slave_id = Column(Integer, nullable=False, default=1)
+    scan_interval_sec = Column(Integer, nullable=False, default=5)
+    is_active = Column(Boolean, nullable=False, default=True)
+    created_at_utc = Column(DateTime, nullable=False)
+
+
+class PLCTag(Base):
+    __tablename__ = "plc_tags"
+    id = Column(String(64), primary_key=True)
+    plc_id = Column(String(64), nullable=False, index=True)
+    tag_name = Column(String(128), nullable=False, index=True)
+    address = Column(Integer, nullable=False)
+    data_type = Column(String(32), nullable=False, default="BOOL")  # BOOL, INT16, FLOAT32
+    multiplier = Column(Float, nullable=True, default=1.0)  # Scaling factor
+    is_stop_trigger = Column(Boolean, nullable=False, default=False)
+    trigger_value = Column(
+        Float, nullable=True
+    )  # If match this value, trigger stop (usually 1 for BOOL)
+    stop_reason_template = Column(
+        String(256), nullable=True
+    )  # e.g. "Low Pressure: $pressure_tag psi"
+    asset_id = Column(String(128), nullable=True)  # Asset to associate stop with
 
 
 class Ticket(Base):

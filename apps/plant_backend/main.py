@@ -7,7 +7,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
-from apps.plant_backend import models  # noqa: F401
+from apps.plant_backend import (
+    models,  # noqa: F401
+    plc_service,
+)
 from apps.plant_backend.middleware_station import StationPolicyMiddleware
 from apps.plant_backend.routers import (
     assets,
@@ -27,6 +30,7 @@ from apps.plant_backend.routers.health import router as health_router
 from apps.plant_backend.routers.ingest import router as ingest_router
 from apps.plant_backend.routers.master import router as master_router
 from apps.plant_backend.routers.metrics import router as metrics_router
+from apps.plant_backend.routers.plc import router as plc_router
 from apps.plant_backend.routers.stations import router as stations_router
 from apps.plant_backend.routers.stops import router as stops_router
 from apps.plant_backend.routers.tickets import router as tickets_router
@@ -62,6 +66,7 @@ app.include_router(stops_router)
 app.include_router(tickets_router)
 app.include_router(ingest_router)
 app.include_router(stop_queue_router)
+app.include_router(plc_router)
 app.include_router(insights_mock.router)
 app.include_router(ui_tickets.router)
 app.include_router(ui_assets.router)
@@ -164,4 +169,12 @@ def startup() -> None:
 
     _bootstrap_admin_if_env_present()
     _bootstrap_masters()
+
+    # Start PLC Polling Background Thread
+    try:
+        plc_service.start_polling_thread(PlantSessionLocal)
+        log.info("plc_service_started")
+    except Exception:
+        log.error("plc_service_startup_failed", exc_info=True)
+
     log.info("plant_started", extra={"site_code": settings.plant_site_code})
