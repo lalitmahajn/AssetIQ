@@ -16,9 +16,11 @@ from apps.plant_backend.models import (
     ReasonSuggestion,
     ReportRequest,
     StopQueue,
+    SystemConfig,
     Ticket,
     TicketActivity,
     TimelineEvent,
+    WhatsAppQueue,
 )
 from common_core.config import settings
 
@@ -413,6 +415,49 @@ def create_ticket(
         },
         corr,
     )
+
+    # WhatsApp Alert Logic
+    try:
+        ws_enabled = db.get(SystemConfig, "whatsappEnabled")
+        ws_phone = db.get(SystemConfig, "whatsappTargetPhone")
+        ws_template = db.get(SystemConfig, "whatsappMessageTemplate")
+
+        if ws_enabled and ws_enabled.config_value is True and ws_phone and ws_phone.config_value:
+            # Default template if not set
+            raw_msg = "🚀 AssetIQ Ticket Created\nID: {id}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}"
+            if ws_template and ws_template.config_value:
+                raw_msg = str(ws_template.config_value)
+
+            # Format the message
+            # Safe substitution to avoid crashes if template has invalid keys
+            msg = (
+                raw_msg.replace("{id}", str(tid))
+                .replace("{asset_id}", str(final_asset_id))
+                .replace("{title}", str(title))
+                .replace("{priority}", str(priority))
+                .replace("{created_at}", str(now.strftime("%Y-%m-%d %H:%M:%S")))
+                .replace("{source}", str(source or "Unknown"))
+                .replace("{assigned_to}", str(assigned_to or "Unassigned"))
+                .replace("{dept}", str(dept or "General"))
+                .replace("{sla_due}", str(sla_due.strftime("%Y-%m-%d %H:%M:%S")))
+                .replace("{site_code}", str(settings.plant_site_code))
+            )
+
+            db.add(
+                WhatsAppQueue(
+                    ticket_id=tid,
+                    phone_number=str(ws_phone.config_value),
+                    message=msg,
+                    status="PENDING",
+                    created_at_utc=now,
+                )
+            )
+    except Exception as e:
+        # Don't fail ticket creation just because WhatsApp queue failed
+        import logging
+
+        logging.getLogger("assetiq").error(f"Failed to queue WhatsApp alert: {e}")
+
     return t
 
 
@@ -455,6 +500,49 @@ def close_ticket(
         {"ticket_id": ticket_id, "close_note": close_note},
         f"ticket_close:{ticket_id}",
     )
+
+    # WhatsApp Alert Logic for Closure
+    try:
+        ws_enabled = db.get(SystemConfig, "whatsappEnabled")
+        ws_phone = db.get(SystemConfig, "whatsappTargetPhone")
+        ws_template = db.get(SystemConfig, "whatsappCloseMessageTemplate")
+
+        if ws_enabled and ws_enabled.config_value is True and ws_phone and ws_phone.config_value:
+            # Default template if not set
+            raw_msg = "✅ Ticket Closed\nID: {id}\nNote: {close_note}"
+            if ws_template and ws_template.config_value:
+                raw_msg = str(ws_template.config_value)
+
+            closed_at_str = (
+                t.resolved_at_utc.strftime("%Y-%m-%d %H:%M:%S") if t.resolved_at_utc else "N/A"
+            )
+
+            # Format the message
+            msg = (
+                raw_msg.replace("{id}", str(ticket_id))
+                .replace("{asset_id}", str(t.asset_id))
+                .replace("{title}", str(t.title))
+                .replace("{priority}", str(t.priority))
+                .replace("{close_note}", str(close_note))
+                .replace("{resolution_reason}", str(resolution_reason or "N/A"))
+                .replace("{closed_at}", closed_at_str)
+                .replace("{site_code}", str(settings.plant_site_code))
+            )
+
+            db.add(
+                WhatsAppQueue(
+                    ticket_id=ticket_id,
+                    phone_number=str(ws_phone.config_value),
+                    message=msg,
+                    status="PENDING",
+                    created_at_utc=_now(),
+                )
+            )
+    except Exception as e:
+        import logging
+
+        logging.getLogger("assetiq").error(f"Failed to queue WhatsApp close alert: {e}")
+
     outbox_add(
         db,
         "ticket",

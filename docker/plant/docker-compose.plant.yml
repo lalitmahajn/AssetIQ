@@ -101,8 +101,20 @@ services:
     depends_on:
       - plant_backend
 
+  whatsapp_worker:
+    build:
+      context: ../../
+      dockerfile: docker/plant/Dockerfile.whatsapp_worker
+    environment:
+      PLANT_DB_URL: postgresql+psycopg2://${PLANT_POSTGRES_USER:-assetiq}:${PLANT_POSTGRES_PASSWORD}@postgres:5432/${PLANT_POSTGRES_DB:-assetiq_plant}
+    depends_on:
+      - postgres
+    volumes:
+      - whatsapp_session:/app/session
+
 volumes:
   plant_pg:
+  whatsapp_session:
   report_vault:
 
 

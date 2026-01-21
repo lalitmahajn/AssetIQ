@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { apiGet } from "../api";
 
 export default function AssetwiseEfficiencyChart() {
+    const [days, setDays] = useState(7);
     const [data, setData] = useState(null);
     const [err, setErr] = useState("");
     const [loading, setLoading] = useState(true);
@@ -10,9 +11,10 @@ export default function AssetwiseEfficiencyChart() {
 
     useEffect(() => {
         let mounted = true;
+        setLoading(true);
         (async () => {
             try {
-                const resp = await apiGet("/ui/efficiency/by-asset?days=7");
+                const resp = await apiGet(`/ui/efficiency/by-asset?days=${days}`);
                 if (mounted) {
                     setData(resp);
                     setLoading(false);
@@ -25,7 +27,7 @@ export default function AssetwiseEfficiencyChart() {
             }
         })();
         return () => { mounted = false; };
-    }, []);
+    }, [days]);
 
     const toggle = (id) => {
         setExpanded(prev => ({ ...prev, [id]: !prev[id] }));
@@ -62,30 +64,83 @@ export default function AssetwiseEfficiencyChart() {
         return "bg-red-100 text-red-700 border-red-200";
     };
 
-    const renderRow = (node) => {
+    const renderRow = (node, hierarchy = []) => {
         const isExp = expanded[node.asset_id];
         const hasChildren = node.children && node.children.length > 0;
         
+        // Tree Guides using fixed width cells and SVGs
+        const renderGuides = () => {
+            return hierarchy.map((isLast, index) => {
+                const isCurrent = index === hierarchy.length - 1;
+                
+                return (
+                    <div key={index} className="w-8 h-auto flex-shrink-0 flex justify-center bg-transparent relative">
+                        {!isCurrent ? (
+                            // Ancestor Guide: Vertical line if ancestor is not last
+                            !isLast && <div className="absolute top-0 bottom-0 w-px bg-gray-300 left-1/2 -ml-px"></div>
+                        ) : (
+                            // Current Node Connector
+                            <>
+                                {/* Vertical Line: Top to Bottom (if T) or Top to Middle (if L) */}
+                                <div className={`absolute top-0 w-px bg-gray-300 left-1/2 -ml-px ${isLast ? 'h-1/2' : 'h-full'}`}></div>
+                                {/* Horizontal Line: Middle to Right */}
+                                <div className="absolute top-1/2 right-0 w-1/2 h-px bg-gray-300"></div>
+                            </>
+                        )}
+                    </div>
+                );
+            });
+        };
+
         return (
             <React.Fragment key={node.asset_id}>
                 <tr className="hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors">
-                    <td className="py-3 pr-4 pl-4 whitespace-nowrap">
-                        <div 
-                            className={`flex items-center gap-2 ${hasChildren ? 'cursor-pointer select-none text-gray-800' : 'text-gray-600'}`}
-                            onClick={() => hasChildren && toggle(node.asset_id)}
-                            style={{ paddingLeft: `${node.level * 24}px` }} 
-                        >
-                            <span className="w-4 h-4 flex items-center justify-center text-gray-400">
-                                {hasChildren && (
-                                    <span className="text-[10px] transform transition-transform duration-200">
-                                        {isExp ? "▼" : "▶"}
-                                    </span>
+                    <td className="p-0 pr-4 whitespace-nowrap">
+                        <div className="flex items-stretch h-full min-h-[48px]">
+                            
+                            {/* 1. Indentation Guides */}
+                            {renderGuides()}
+
+                            {/* 2. Expander / Leaf Icon Cell */}
+                            <div className="w-8 h-auto flex-shrink-0 flex items-center justify-center relative">
+                                {/* Connection to child line (Vertical tail if expanded and has children) */}
+                                {/* Only draw tiny tail if I have children and am expanded, to connect to my first child */}
+                                {hasChildren && isExp && (
+                                    <div className="absolute bottom-0 top-1/2 w-px bg-gray-300 left-1/2 -ml-px"></div>
+                                    // Note: top-1/2 essentially starts from center where the expander is
                                 )}
-                            </span>
-                            <div className="flex flex-col">
-                                <span className={`text-sm ${node.is_parent ? 'font-bold' : 'font-medium'}`}>
-                                    {node.asset_name || node.asset_code}
-                                </span>
+                                
+                                {/* Connector adjustment for root nodes? 
+                                    If I am a child (hierarchy > 0), the guide cell to my left drew a line to my center. 
+                                    So the grid connects perfectly. 
+                                */}
+
+                                <div 
+                                    className={`w-5 h-5 flex items-center justify-center rounded-sm transition-colors cursor-pointer z-10 ${hasChildren ? 'hover:bg-gray-200 bg-gray-100 border border-gray-300' : ''}`}
+                                    onClick={() => hasChildren && toggle(node.asset_id)}
+                                >
+                                    {hasChildren ? (
+                                        <span className="text-[10px] text-gray-600 font-bold leading-none pb-0.5">
+                                            {isExp ? "−" : "+"}
+                                        </span>
+                                    ) : (
+                                        <span className="w-1.5 h-1.5 rounded-full bg-gray-300"></span>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* 3. Asset Name & Badge */}
+                            <div className="flex flex-col justify-center py-3 pl-2 cursor-default" onClick={() => hasChildren && toggle(node.asset_id)}>
+                                <div className="flex items-center gap-2">
+                                    <span className={`text-sm ${node.is_parent ? 'font-bold text-gray-800' : 'font-medium text-gray-700'}`}>
+                                        {node.asset_name || node.asset_code}
+                                    </span>
+                                    {node.is_critical && (
+                                        <span className="px-1.5 py-0.5 text-[10px] uppercase font-bold text-red-600 bg-red-100 border border-red-200 rounded tracking-wider">
+                                            Critical
+                                        </span>
+                                    )}
+                                </div>
                                 {node.asset_name && node.asset_name !== node.asset_code && (
                                     <span className="text-[10px] text-gray-400">{node.asset_code}</span>
                                 )}
@@ -104,7 +159,9 @@ export default function AssetwiseEfficiencyChart() {
                         {node.downtime_minutes.toLocaleString()} <span className="text-xs text-gray-300">min</span>
                     </td>
                 </tr>
-                {hasChildren && isExp && node.children.map(child => renderRow(child))}
+                {hasChildren && isExp && node.children.map((child, i) => 
+                     renderRow(child, [...hierarchy, i === node.children.length - 1])
+                )}
             </React.Fragment>
         );
     };
@@ -115,8 +172,19 @@ export default function AssetwiseEfficiencyChart() {
                 <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                     <span className="w-2 h-6 bg-gradient-to-b from-green-500 to-emerald-400 rounded-sm"></span>
                     Assetwise Efficiency 
-                    <span className="text-gray-400 font-normal text-sm ml-1">(Last {data.window_days} Days)</span>
                 </h3>
+                <div className="flex items-center gap-2">
+                    <select 
+                        value={days} 
+                        onChange={(e) => setDays(Number(e.target.value))}
+                        className="text-sm border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
+                    >
+                        <option value={1}>Last 24 Hours</option>
+                        <option value={7}>Last 7 Days</option>
+                        <option value={30}>Last 30 Days</option>
+                        <option value={90}>Last 3 Months</option>
+                    </select>
+                </div>
             </div>
             
             <div className="overflow-x-auto">
@@ -130,7 +198,7 @@ export default function AssetwiseEfficiencyChart() {
                         </tr>
                     </thead>
                     <tbody>
-                        {tree.map(root => renderRow(root))}
+                        {tree.map(root => renderRow(root, []))}
                     </tbody>
                 </table>
             </div>

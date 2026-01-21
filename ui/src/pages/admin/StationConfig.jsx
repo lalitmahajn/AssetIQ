@@ -5,7 +5,11 @@ export default function StationConfig() {
     const [config, setConfig] = useState({
         plantName: "Loading...",
         stopQueueVisible: true,
-        autoLogoutMinutes: 30
+        autoLogoutMinutes: 30,
+        whatsappEnabled: false,
+        whatsappTargetPhone: "",
+        whatsappMessageTemplate: "",
+        whatsappCloseMessageTemplate: ""
     });
 
     const [saving, setSaving] = useState(false);
@@ -43,7 +47,11 @@ export default function StationConfig() {
         try {
             await apiPost("/master/config", {
                 stopQueueVisible: config.stopQueueVisible,
-                autoLogoutMinutes: minutes
+                autoLogoutMinutes: minutes,
+                whatsappEnabled: config.whatsappEnabled,
+                whatsappTargetPhone: config.whatsappTargetPhone,
+                whatsappMessageTemplate: config.whatsappMessageTemplate,
+                whatsappCloseMessageTemplate: config.whatsappCloseMessageTemplate
             });
             setMsg("Configuration saved successfully!");
             // Refresh global config if needed
@@ -95,6 +103,75 @@ export default function StationConfig() {
                         value={config.autoLogoutMinutes}
                         onChange={e => handleChange('autoLogoutMinutes', e.target.value)}
                     />
+                </div>
+
+                <div className="border-t border-gray-100 pt-4 mt-4">
+                    <h4 className="text-md font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                        <span className="w-1.5 h-1.5 bg-green-500 rounded-full"></span>
+                        WhatsApp Alerts
+                    </h4>
+                    
+                    <div className="flex items-center justify-between mb-4">
+                        <span className="text-gray-700 text-sm">Enable WhatsApp for All Tickets</span>
+                        <button
+                            className={`w-12 h-6 rounded-full p-1 transition-colors ${config.whatsappEnabled ? 'bg-green-600' : 'bg-gray-300'}`}
+                            onClick={() => handleChange('whatsappEnabled', !config.whatsappEnabled)}
+                        >
+                            <div className={`bg-white w-4 h-4 rounded-full shadow transform transition-transform ${config.whatsappEnabled ? 'translate-x-6' : ''}`} />
+                        </button>
+                    </div>
+
+                    <div>
+                        <label className="block text-sm font-medium text-gray-700">WhatsApp Alert Target (Phone or Group Name)</label>
+                        <input
+                            type="text"
+                            placeholder="e.g. +919876543210 or 'AssetIQ Alerts'"
+                            className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2"
+                            value={config.whatsappTargetPhone}
+                            onChange={e => handleChange('whatsappTargetPhone', e.target.value)}
+                        />
+                        <p className="text-[10px] text-gray-400 mt-1 italic">
+                            Enter a full phone number with country code, or the <strong>exact name</strong> of a WhatsApp group.
+                        </p>
+                    </div>
+
+                    <div className="mt-4">
+                        <label className="block text-sm font-medium text-gray-700">Message Template</label>
+                        <p className="text-[10px] text-gray-400 mb-1">
+                            Supported: <code>{'{id}'}, {'{asset_id}'}, {'{title}'}, {'{priority}'}, {'{created_at}'}, {'{source}'}, {'{dept}'}, {'{assigned_to}'}, {'{sla_due}'}, {'{site_code}'}</code>
+                        </p>
+                        <textarea
+                            className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm font-mono h-24"
+                            value={config.whatsappMessageTemplate || ''}
+                            onChange={e => handleChange('whatsappMessageTemplate', e.target.value)}
+                            placeholder="🚀 AssetIQ Ticket Created..."
+                        />
+                        <button 
+                            onClick={() => handleChange('whatsappMessageTemplate', "🚀 AssetIQ Ticket Created\nID: {id}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}")}
+                            className="text-[10px] text-purple-600 hover:text-purple-800 underline mt-1"
+                        >
+                            Reset to Default
+                        </button>
+                    </div>
+
+                    <div className="mt-4 border-t border-dashed border-gray-200 pt-4">
+                        <label className="block text-sm font-medium text-gray-700">Closed Ticket Template</label>
+                        <p className="text-[10px] text-gray-400 mb-1">
+                            Supported: <code>{'{id}'}, {'{close_note}'}, {'{resolution_reason}'}, {'{closed_at}'}</code> + common fields
+                        </p>
+                        <textarea
+                            className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm font-mono h-24"
+                            value={config.whatsappCloseMessageTemplate || ''}
+                            onChange={e => handleChange('whatsappCloseMessageTemplate', e.target.value)}
+                            placeholder="✅ Ticket Closed..."
+                        />
+                        <button 
+                            onClick={() => handleChange('whatsappCloseMessageTemplate', "✅ Ticket Closed\nID: {id}\nNote: {close_note}")}
+                            className="text-[10px] text-purple-600 hover:text-purple-800 underline mt-1"
+                        >
+                            Reset to Default
+                        </button>
+                    </div>
                 </div>
 
                 <button

@@ -76,6 +76,7 @@ def simulate():
                 "name": "Polymer Production Hall A",
                 "category": "Area",
                 "criticality": "high",
+                "is_critical": False,  # Parent itself is not critical to anything (it's the root)
             }
             services.asset_create(db, parent_area, actor_user_id="admin", request_id=None)
             db.flush()
@@ -88,6 +89,7 @@ def simulate():
                     "name": "Polymerization Reactor A",
                     "category": "Reaction",
                     "criticality": "high",
+                    "is_critical": True,  # CRITICAL CHILD
                     "parent_id": "HALL-A",
                 },
                 {
@@ -96,6 +98,7 @@ def simulate():
                     "name": "Twin-Screw Extruder",
                     "category": "Extrusion",
                     "criticality": "high",
+                    "is_critical": True,  # CRITICAL CHILD
                     "parent_id": "HALL-A",
                 },
                 {
@@ -104,6 +107,7 @@ def simulate():
                     "name": "High-Speed Centrifuge",
                     "category": "Separation",
                     "criticality": "medium",
+                    "is_critical": False,  # NON-CRITICAL CHILD
                     "parent_id": "HALL-A",
                 },
                 {
@@ -112,6 +116,7 @@ def simulate():
                     "name": "Fluid Bed Dryer",
                     "category": "Drying",
                     "criticality": "medium",
+                    "is_critical": False,  # NON-CRITICAL CHILD
                     "parent_id": "HALL-A",
                 },
                 {
@@ -120,6 +125,7 @@ def simulate():
                     "name": "Distillation Column",
                     "category": "Distillation",
                     "criticality": "high",
+                    "is_critical": True,  # CRITICAL CHILD
                     "parent_id": "HALL-A",
                 },
             ]
@@ -290,8 +296,68 @@ def simulate():
                     # Track for HQ Rollup
                     day_stops += 1
                     day_downtime += duration_min
-                    r_count, r_min = reason_map.get(reason, (0, 0))
-                    reason_map[reason] = (r_count + 1, r_min + duration_min)
+                r_count, r_min = reason_map.get(reason, (0, 0))
+                reason_map[reason] = (r_count + 1, r_min + duration_min)
+
+            if is_today:
+                print(" Injecting EFFICIENCY VERIFICATION stops for Today...")
+                # 1. Parent HALL-A: 10:00 - 10:30 (30m)
+                # 2. Critical R-101: 10:20 - 10:40 (20m, overlaps 10m)
+                # 3. Non-Critical C-301: 09:10 - 09:20 (10m)
+
+                verif_stops = [
+                    ("HALL-A", "Parent Maintenance", 10, 0, 30),
+                    ("R-101", "Critical Reactor Seal", 10, 20, 20),
+                    ("C-301", "Non-Critical Sensor Check", 9, 10, 10),
+                ]
+
+                for v_asset, v_reason, v_hour, v_min, v_dur in verif_stops:
+                    v_start = current_date.replace(hour=v_hour, minute=v_min)
+                    v_end = v_start + timedelta(minutes=v_dur)
+
+                    res = services.open_stop(db, v_asset, f"[TEST] {v_reason}", "admin", None, None)
+                    db.flush()
+
+                    s_id = res["stop_id"]
+                    t_id = res["ticket_id"]
+
+                    # Backdate Stop
+                    sq = db.get(StopQueue, s_id)
+                    if sq:
+                        sq.opened_at_utc = v_start
+                        sq.closed_at_utc = v_end
+                        sq.is_open = False
+                        sq.resolution_text = f"Test Fixed: {v_reason}"
+
+                    # Backdate Ticket
+                    tck = db.get(Ticket, t_id)
+                    if tck:
+                        tck.created_at_utc = v_start
+                        tck.status = "CLOSED"
+                        tck.resolved_at_utc = v_end
+                        tck.close_note = "Test Resolved"
+
+                    # Update Timeline
+                    from apps.plant_backend.models import TimelineEvent
+
+                    te_list = (
+                        db.query(TimelineEvent)
+                        .filter(
+                            TimelineEvent.correlation_id.in_(
+                                [f"stop_open:{s_id}", f"ticket_open:{t_id}"]
+                            )
+                        )
+                        .all()
+                    )
+                    for te in te_list:
+                        te.occurred_at_utc = v_start
+                        te.created_at_utc = v_start
+
+                    # Stats
+                    day_stops += 1
+                    day_downtime += v_dur
+                    r_count, r_min = reason_map.get(v_reason, (0, 0))
+                    reason_map[v_reason] = (r_count + 1, r_min + v_dur)
 
             # Send Daily Rollup to HQ
             hq_items = []

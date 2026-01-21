@@ -81,6 +81,17 @@ class EmailQueue(Base):
     sent_at_utc = Column(DateTime, nullable=True)
 
 
+class WhatsAppQueue(Base):
+    __tablename__ = "whatsapp_queue"
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    ticket_id = Column(String(64), nullable=False, index=True)
+    phone_number = Column(String(32), nullable=False)
+    message = Column(Text, nullable=False)
+    status = Column(String(32), nullable=False, index=True, default="PENDING")
+    created_at_utc = Column(DateTime, nullable=False)
+    sent_at_utc = Column(DateTime, nullable=True)
+
+
 class IngestDedup(Base):
     __tablename__ = "ingest_dedup"
     id = Column(Integer, primary_key=True, autoincrement=True)

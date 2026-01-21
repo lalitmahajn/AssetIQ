@@ -441,6 +441,10 @@ def get_config(claims: Annotated[Any, Depends(require_roles("admin"))] = None):
             "siteCode": site_code,
             "stopQueueVisible": True,
             "autoLogoutMinutes": 30,
+            "whatsappEnabled": False,
+            "whatsappTargetPhone": "",
+            "whatsappMessageTemplate": "🚀 AssetIQ Ticket Created\nID: {id}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}",
+            "whatsappCloseMessageTemplate": "✅ Ticket Closed\nID: {id}\nNote: {close_note}",
         }
 
         # Override with DB values
@@ -463,7 +467,14 @@ def set_config(
         now = datetime.utcnow()
         for k, v in payload.items():
             # Only allow specific keys
-            if k not in ["stopQueueVisible", "autoLogoutMinutes"]:
+            if k not in [
+                "stopQueueVisible",
+                "autoLogoutMinutes",
+                "whatsappEnabled",
+                "whatsappTargetPhone",
+                "whatsappMessageTemplate",
+                "whatsappCloseMessageTemplate",
+            ]:
                 continue
 
             # Validation

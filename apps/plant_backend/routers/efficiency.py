@@ -43,114 +43,82 @@ def get_efficiency_by_asset(days: int = 7, user=Depends(require_perm("stops.view
             else:
                 roots.append(a.id)
 
-        # 1. Calculate Base Stats (Leaf Logic)
-        base_stats = {}  # asset_id -> {downtime_sec, total_min}
+        # 1. Pre-process Stops into Intervals per Asset
+        # asset_id -> list of (start_utc, end_utc) tuples
+        asset_intervals: dict[str, list[tuple[datetime, datetime]]] = {}
 
-        # Aggregate downtime by asset
-        downtime_by_asset = {}
         for s in stops:
-            asset_id = s.asset_id
-            if s.closed_at_utc:
-                dt_sec = (s.closed_at_utc - s.opened_at_utc).total_seconds()
-            else:
-                dt_sec = (now - s.opened_at_utc).total_seconds()
+            # Clip stop to window
+            s_start = max(s.opened_at_utc, start_dt)
+            s_end = s.closed_at_utc if s.closed_at_utc else now
+            # Ensure start < end (sanity check)
+            s_end = min(s_end, now)
 
-            downtime_by_asset[asset_id] = downtime_by_asset.get(asset_id, 0) + dt_sec
+            if s_start < s_end:
+                asset_intervals.setdefault(s.asset_id, []).append((s_start, s_end))
 
-        for asset in assets:
-            dt_min = int(downtime_by_asset.get(asset.id, 0) / 60)
-            uptime_min = max(0, total_minutes - dt_min)
-            eff = round((uptime_min / total_minutes) * 100, 1) if total_minutes > 0 else 100.0
-            base_stats[asset.id] = {
-                "downtime_minutes": dt_min,
-                "uptime_minutes": uptime_min,
-                "efficiency_pct": eff,
-                "has_direct_stops": asset.id in downtime_by_asset,
-            }
+        # Helper to merge intervals and calculate total minutes
+        def get_merged_downtime_minutes(
+            intervals: list[tuple[datetime, datetime]],
+        ) -> tuple[int, list[tuple[datetime, datetime]]]:
+            if not intervals:
+                return 0, []
 
-        # 2. Recursive Aggregation & Linearization
+            # Sort by start time
+            sorted_intervals = sorted(intervals, key=lambda x: x[0])
+            merged = []
 
-        def process_node(asset_id, level):
+            if sorted_intervals:
+                curr_start, curr_end = sorted_intervals[0]
+                for next_start, next_end in sorted_intervals[1:]:
+                    if next_start < curr_end:  # Overlap or adjacent
+                        curr_end = max(curr_end, next_end)
+                    else:
+                        merged.append((curr_start, curr_end))
+                        curr_start, curr_end = next_start, next_end
+                merged.append((curr_start, curr_end))
+
+            total_sec = sum((end - start).total_seconds() for start, end in merged)
+            return int(total_sec / 60), merged
+
+        # 2. Recursive Calculation (Post-Order Logic)
+        computed_stats = {}  # asset_id -> stats dict
+
+        def calc_recursive(asset_id):
+            # Start with own intervals
+            my_intervals = asset_intervals.get(asset_id, [])[:]
+
             children = children_map.get(asset_id, [])
 
-            # Recurse first to get children stats
-            child_stats_list = []
+            # Recurse for children
             for child_id in children:
-                child_stats_list.append(process_node(child_id, level + 1))
+                child_intervals, _ = calc_recursive(child_id)
 
-            # Use base stats initially
-            my_stats = base_stats[asset_id]
-            final_stats = my_stats.copy()
+                # CRITICALITY LOGIC:
+                # If child is critical, its downtime intervals contribute to parent
+                child_obj = asset_map[child_id]
+                if child_obj.is_critical:
+                    my_intervals.extend(child_intervals)
 
-            # If I have children, my efficiency is Average of Children (unless logic dictates otherwise)
-            # Strategy: If node has no stops itself but has children, treat it as pure aggregator.
-            # If node has stops AND children (rare for structure), we might need weighted avg.
-            # Simple plan: If children exist, overwrite efficiency with avg(children_efficiency)
-            # and sum(downtime).
+            # Merge overlaps & calculate stats
+            dt_min, final_intervals = get_merged_downtime_minutes(my_intervals)
+            upt_min = max(0, total_minutes - dt_min)
+            eff = round((upt_min / total_minutes) * 100, 1) if total_minutes > 0 else 100.0
 
-            if children:
-                # Sum downtime
-                agg_downtime = sum(c["downtime_minutes"] for c in child_stats_list)
-                # If the parent itself had stops, add them too (mixed node)
-                agg_downtime += my_stats["downtime_minutes"]
-
-                final_stats["downtime_minutes"] = agg_downtime
-                final_stats["uptime_minutes"] = max(0, total_minutes - agg_downtime)
-
-                # Average Efficiency
-                if child_stats_list:
-                    avg_eff = sum(c["efficiency_pct"] for c in child_stats_list) / len(
-                        child_stats_list
-                    )
-                    final_stats["efficiency_pct"] = round(avg_eff, 1)
-
-            # Add to result list (DFS Order)
-            # asset_obj = asset_map[asset_id]
-            # item = { ... } - Unused recursion helper leftovers
-            # We append to results list here? No, recursive function usually constructs/returns.
-            # But we want a flat list.
-            # Actually, because we need to return stats for the parent computation,
-            # we should separate the list building.
-            # Let's rebuild:
-            return final_stats
-
-        # Re-traverse to build list.
-        # Actually proper way: do calc in one pass (post-order) then build list (pre-order)?
-        # Or mixed. Helper that returns stats AND appends to list?
-        # If we append to global `results` in the loop, we get Post-Order (children before parent).
-        # We want Pre-Order for UI (Parent then children).
-        # So we need to calculate stats first (Post-Order), then clean list (Pre-Order).
-
-        # Step 2a: Calculate Stats Map (Post-Order)
-        computed_stats = {}  # asset_id -> stats
-
-        def calc_stats_recursive(asset_id):
-            stats = base_stats[asset_id].copy()
-            children = children_map.get(asset_id, [])
-
-            if children:
-                child_sum_eff = 0
-                child_sum_dt = 0
-                count_metrics = 0
-
-                for cid in children:
-                    c_stats = calc_stats_recursive(cid)
-                    child_sum_eff += c_stats["efficiency_pct"]
-                    child_sum_dt += c_stats["downtime_minutes"]
-                    count_metrics += 1
-
-                # Parent Logic: Avg Efficiency, Sum Downtime
-                stats["downtime_minutes"] += child_sum_dt
-                stats["uptime_minutes"] = max(0, total_minutes - stats["downtime_minutes"])
-                stats["efficiency_pct"] = round(child_sum_eff / count_metrics, 1)
-
+            stats = {
+                "efficiency_pct": eff,
+                "downtime_minutes": dt_min,
+                "uptime_minutes": upt_min,
+            }
             computed_stats[asset_id] = stats
-            return stats
+
+            # Return final intervals to bubble up
+            return final_intervals, stats
 
         for r in roots:
-            calc_stats_recursive(r)
+            calc_recursive(r)
 
-        # Step 2b: Build List (Pre-Order)
+        # 3. Build List (Pre-Order)
         final_list = []
 
         def build_list_recursive(asset_id, level):
@@ -168,6 +136,7 @@ def get_efficiency_by_asset(days: int = 7, user=Depends(require_perm("stops.view
                     "uptime_minutes": stats["uptime_minutes"],
                     "level": level,
                     "is_parent": bool(children_map.get(asset_id)),
+                    "is_critical": asset_obj.is_critical,
                 }
             )
 
