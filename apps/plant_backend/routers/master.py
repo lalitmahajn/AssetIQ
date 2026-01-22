@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -465,6 +465,13 @@ def set_config(
     db = PlantSessionLocal()
     try:
         now = datetime.utcnow()
+        updated_state = {}
+
+        # Log payload for debugging
+        import logging
+
+        logging.getLogger("assetiq").info(f"SET_CONFIG payload: {payload}")
+
         for k, v in payload.items():
             # Only allow specific keys
             if k not in [
@@ -473,9 +480,12 @@ def set_config(
                 "whatsappEnabled",
                 "whatsappTargetPhone",
                 "whatsappMessageTemplate",
-                "whatsappMessageTemplate",
                 "whatsappCloseMessageTemplate",
+                "whatsappWarningMessageTemplate",
+                "whatsappBreachMessageTemplate",
                 "whatsappHeartbeat",
+                "whatsappLogoutRequest",
+                "whatsappSlaWarningThresholdMinutes",
             ]:
                 continue
 
@@ -495,7 +505,151 @@ def set_config(
             else:
                 db.add(SystemConfig(config_key=k, config_value=v, updated_at_utc=now))
 
+            # Add to response for UI update
+            updated_state[k] = v
+
         db.commit()
-        return {"status": "ok"}
+        return {"status": "ok", "updated": updated_state}
+    except Exception as e:
+        db.rollback()
+        import logging
+
+        logging.getLogger("assetiq").error(f"SET_CONFIG FAILED: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        db.close()
+
+
+@router.post("/simulate/sla_warning")
+def simulate_sla_warning(
+    claims: Annotated[Any, Depends(require_roles("admin"))] = None,
+):
+    """Sets the latest open ticket's SLA to be approaching (threshold - 5 mins)"""
+    from sqlalchemy import desc, select
+
+    from apps.plant_backend.models import SystemConfig, Ticket
+
+    db = PlantSessionLocal()
+    try:
+        # Get threshold
+        threshold = 60
+        row = db.get(SystemConfig, "whatsappSlaWarningThresholdMinutes")
+        if row:
+            try:
+                threshold = int(row.config_value)
+            except:
+                pass
+
+        # Find latest open ticket
+        t = db.execute(
+            select(Ticket)
+            .where(Ticket.status.in_(["OPEN", "ACKNOWLEDGED", "ACK"]))
+            .order_by(desc(Ticket.created_at_utc))
+            .limit(1)
+        ).scalar()
+
+        if not t:
+            return {"status": "error", "message": "No open tickets found for simulation."}
+
+        # Set SLA to be threshold - 5 minutes from now
+        # This ensures it hits the warning logic
+        new_sla = datetime.utcnow() + timedelta(minutes=threshold - 5)
+        t.sla_due_at_utc = new_sla
+        t.sla_warning_sent = False
+        db.commit()
+
+        return {
+            "status": "ok",
+            "message": f"Ticket {t.id} SLA updated to {new_sla} (approaching warning).",
+            "ticket_id": t.id,
+        }
+    finally:
+        db.close()
+
+
+@router.post("/simulate/sla_breach")
+def simulate_sla_breach(
+    claims: Annotated[Any, Depends(require_roles("admin"))] = None,
+):
+    """Sets the latest open ticket's SLA to be in the past"""
+    from sqlalchemy import desc, select
+
+    from apps.plant_backend.models import Ticket
+
+    db = PlantSessionLocal()
+    try:
+        # Find latest open ticket
+        t = db.execute(
+            select(Ticket)
+            .where(Ticket.status.in_(["OPEN", "ACKNOWLEDGED", "ACK"]))
+            .order_by(desc(Ticket.created_at_utc))
+            .limit(1)
+        ).scalar()
+
+        if not t:
+            return {"status": "error", "message": "No open tickets found for simulation."}
+
+        # Set SLA to 15 minutes ago
+        new_sla = datetime.utcnow() - timedelta(minutes=15)
+        t.sla_due_at_utc = new_sla
+        db.commit()
+
+        return {
+            "status": "ok",
+            "message": f"Ticket {t.id} SLA updated to {new_sla} (breached).",
+            "ticket_id": t.id,
+        }
+    finally:
+        db.close()
+
+
+@router.post("/simulate/stop")
+def simulate_stop(
+    claims: Annotated[Any, Depends(require_roles("admin"))] = None,
+):
+    """Triggers a simulated machine stop for the first asset found"""
+    from sqlalchemy import select
+
+    from apps.plant_backend.models import Asset
+    from apps.plant_backend.runtime import sse_bus
+    from apps.plant_backend.services import open_stop
+
+    db = PlantSessionLocal()
+    try:
+        # Find an asset to stop
+        asset = db.execute(select(Asset).limit(1)).scalar()
+        if not asset:
+            return {"status": "error", "message": "No assets found to simulate a stop on."}
+
+        res = open_stop(
+            db,
+            asset.id,
+            "SIMULATED_TEST_STOP",
+            claims["sub"] if claims else "admin",
+            "ADMIN_UI",
+            None,
+        )
+
+        db.commit()
+
+        # Notify UI via SSE
+        sse_bus.publish(
+            {
+                "type": "STOP_OPEN",
+                "stop_id": res["stop_id"],
+                "asset_id": asset.id,
+                "reason": "SIMULATED_TEST_STOP",
+            }
+        )
+
+        return {
+            "status": "ok",
+            "message": f"Stop {res['stop_id']} triggered for asset {asset.id}.",
+            "stop_id": res["stop_id"],
+            "ticket_id": res["ticket_id"],
+        }
+    except Exception as e:
+        db.rollback()
+        return {"status": "error", "message": str(e)}
     finally:
         db.close()

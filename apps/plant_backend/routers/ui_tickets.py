@@ -52,6 +52,7 @@ def list_tickets(
         items = [
             {
                 "id": t.id,
+                "ticket_code": t.ticket_code,
                 "site_code": t.site_code,
                 "asset_id": t.asset_id,
                 "title": t.title,
@@ -195,6 +196,7 @@ def get_details(ticket_id: str, user: Annotated[dict, Depends(require_perm("tick
         return {
             "ticket": {
                 "id": t.id,
+                "ticket_code": t.ticket_code,
                 "site_code": t.site_code,
                 "asset_id": t.asset_id,
                 "title": t.title,

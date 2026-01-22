@@ -36,6 +36,7 @@ const pool = new Pool({
 });
 
 // 2. WhatsApp Client Setup
+let isClientReady = false;
 const client = new Client({
     authStrategy: new LocalAuth({
         dataPath: '/app/session' // Persist session in Docker volume
@@ -75,20 +76,35 @@ client.on('qr', async (qr) => {
 });
 
 client.on('ready', async () => {
+    isClientReady = true;
     console.log('WhatsApp Client is Ready!');
     
     // Clear QR code from database (no longer needed)
     try {
         await pool.query("DELETE FROM system_config WHERE config_key = 'whatsappQRCode'");
+        
+        // [DEBUG] Log all available chats to help user verify names
+        const chats = await client.getChats();
+        console.log("---------------------------------------------------");
+        console.log("AVAILABLE WHATSAPP CHATS (Groups & Contacts):");
+        chats.forEach(c => {
+            if (c.isGroup) console.log(`[GROUP] Name: "${c.name}" | ID: ${c.id._serialized}`);
+            else console.log(`[USER]  Name: "${c.name}" | ID: ${c.id._serialized}`);
+        });
+        console.log("---------------------------------------------------");
+
     } catch (err) {
-        console.error('Failed to clear QR code:', err.message);
+        console.error('Failed to clear QR code or log chats:', err.message);
     }
-    
-    startPolling();
-    startHeartbeat();
+});
+
+client.on('disconnected', (reason) => {
+    isClientReady = false;
+    console.log('Client was logged out', reason);
 });
 
 client.on('auth_failure', (msg) => {
+    isClientReady = false;
     console.error('AUTHENTICATION FAILURE', msg);
 });
 
@@ -96,30 +112,62 @@ async function startPolling() {
     console.log('Started polling whatsapp_queue...');
     setInterval(async () => {
         try {
-            const res = await pool.query(
-                "SELECT * FROM whatsapp_queue WHERE status = 'PENDING' ORDER BY created_at_utc ASC LIMIT 5"
+            // 1. Check for Logout Request (Always check this)
+            const logoutCheck = await pool.query(
+                "SELECT * FROM system_config WHERE config_key = 'whatsappLogoutRequest'"
             );
+            if (logoutCheck.rows.length > 0) {
+                console.log('Logout request detected! Logging out...');
+                try {
+                    await client.logout();
+                    console.log('Logout successful.');
+                } catch (e) {
+                    console.error('Logout failed:', e.message);
+                }
+                // Delete the request
+                await pool.query("DELETE FROM system_config WHERE config_key = 'whatsappLogoutRequest'");
+                // Also clear heartbeats/QR to force a clean state
+                await pool.query("DELETE FROM system_config WHERE config_key = 'whatsappQRCode'");
+                console.log('Cleaning up session files...');
+            }
 
-            for (const row of res.rows) {
-                await processMessage(row);
+            // 2. Poll for PENDING messages (Only if client is ready)
+            if (isClientReady) {
+                const res = await pool.query(
+                    "SELECT * FROM whatsapp_queue WHERE status = 'PENDING' ORDER BY created_at_utc ASC LIMIT 5"
+                );
+
+                for (const row of res.rows) {
+                    await processMessage(row);
+                }
             }
         } catch (err) {
             console.error('Polling Error:', err);
         }
-    }, 10000); // Every 10 seconds
+    }, 2000); // Every 2 seconds
 }
 
 async function startHeartbeat() {
     console.log('Started heartbeat service...');
-    setInterval(async () => {
+    
+    const sendPulse = async () => {
         try {
             let state = 'DISCONNECTED';
-            try {
-                // Get State if client is ready
-                state = await client.getState();
-                if (!state) state = 'CONNECTED'; // Sometimes returns null if connected
-            } catch (e) {
-                state = 'ERROR';
+            if (isClientReady) {
+                try {
+                    state = await client.getState();
+                    if (!state) state = 'CONNECTED'; 
+                } catch (e) {
+                    state = 'READY_BUT_NO_STATE';
+                }
+            } else {
+                // If we have a QR code in DB, we are waiting for scan
+                const qrCheck = await pool.query("SELECT * FROM system_config WHERE config_key = 'whatsappQRCode'");
+                if (qrCheck.rows.length > 0) {
+                    state = 'UNPAIRED';
+                } else {
+                    state = 'INITIALIZING';
+                }
             }
 
             const heartbeatData = JSON.stringify({
@@ -127,20 +175,23 @@ async function startHeartbeat() {
                 state: state
             });
 
-            // Upsert into system_config
-            const query = `
+            await pool.query(`
                 INSERT INTO system_config (config_key, config_value, updated_at_utc)
                 VALUES ('whatsappHeartbeat', $1, NOW())
                 ON CONFLICT (config_key) 
                 DO UPDATE SET config_value = $1, updated_at_utc = NOW();
-            `;
+            `, [heartbeatData]);
             
-            await pool.query(query, [heartbeatData]);
-            // console.log(`Heartbeat sent: ${state}`); // verbose
+            console.log(`Heartbeat sent: ${state}`);
         } catch (err) {
             console.error('Heartbeat Failed:', err.message);
         }
-    }, 30000); // Every 30 seconds
+    };
+
+    // Run once immediately
+    await sendPulse();
+    // Then every 30 seconds
+    setInterval(sendPulse, 30000);
 }
 
 async function processMessage(row) {
@@ -168,7 +219,14 @@ async function processMessage(row) {
                 
                 // Check SLA condition
                 if (requiredSlaState && sla_state) {
-                    if (requiredSlaState !== sla_state.toUpperCase()) {
+                    // [UPDATED] Check match against ANY of the states in the comma-separated sla_state
+                    // e.g. required="WARNING", actual="OK,WARNING" => MATCH
+                    const currentStates = sla_state.toUpperCase().split(',').map(s => s.trim());
+                    
+                    // DEBUG LOG
+                    console.log(`[DEBUG] Checking ${targetName}: Required='${requiredSlaState}', Current=[${currentStates.map(s => `'${s}'`).join(', ')}]`);
+
+                    if (!currentStates.includes(requiredSlaState)) {
                         console.log(`Skipping ${targetName} (requires ${requiredSlaState}, current: ${sla_state})`);
                         skippedCount++;
                         continue;
@@ -226,3 +284,5 @@ async function processMessage(row) {
 }
 
 client.initialize();
+startPolling();
+startHeartbeat();

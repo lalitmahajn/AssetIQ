@@ -33,6 +33,45 @@ def _new_id(prefix: str) -> str:
     return f"{prefix}_{uuid.uuid4().hex[:18]}"
 
 
+def _generate_ticket_code(db) -> str:
+    """
+    Generates a ticket code in the format YYYYMMDD-HHMM-NNNN
+    Example: 20260122-1605-0001
+
+    NOTE: Adjusted to Plant Local Time (IST +5:30) for user friendliness.
+    Counter resets at local midnight.
+    """
+    from sqlalchemy import func
+    from apps.plant_backend.models import Ticket
+
+    # Fixed offset for IST (UTC+5:30)
+    # Ideally this would be in config, but hardcoding for immediate fix as requested
+    tz_offset = timedelta(hours=5, minutes=30)
+    now_utc = datetime.utcnow()
+    now_local = now_utc + tz_offset
+
+    # Start of LOCAL day for counter reset
+    start_of_local_day = now_local.replace(hour=0, minute=0, second=0, microsecond=0)
+    # We need to convert this back to UTC to query the DB correctly?
+    # Actually, created_at_utc is UTC. So we need to query tickets where
+    # (created_at_utc + offset) >= start_of_local_day
+    # equivalent to: created_at_utc >= (start_of_local_day - offset)
+    start_of_day_utc = start_of_local_day - tz_offset
+
+    # Count tickets created since the start of the LOCAL day
+    count = (
+        db.query(func.count(Ticket.id)).filter(Ticket.created_at_utc >= start_of_day_utc).scalar()
+        or 0
+    )
+    serial = count + 1
+
+    # Format using LOCAL time
+    date_str = now_local.strftime("%Y%m%d")
+    time_str = now_local.strftime("%H%M")
+
+    return f"{date_str}-{time_str}-{serial:04d}"
+
+
 def audit_write(
     db,
     action: str,
@@ -123,6 +162,19 @@ def log_ticket_activity(
     )
 
 
+def _to_friendly_local_time(dt_utc) -> str:
+    """
+    Converts UTC datetime to Friendly Plant Local Time (IST).
+    Format: 22 Jan 2026, 04:44 PM
+    """
+    if not dt_utc:
+        return "N/A"
+    # Fixed offset for IST (UTC+5:30)
+    tz_offset = timedelta(hours=5, minutes=30)
+    local_dt = dt_utc + tz_offset
+    return local_dt.strftime("%d %b %Y, %I:%M %p")
+
+
 def open_stop(
     db,
     asset_id: str,
@@ -152,10 +204,13 @@ def open_stop(
     timeline_append(db, asset_id, "STOP_OPEN", {"stop_id": stop_id, "reason": reason}, corr_stop)
 
     ticket_id = _new_id("TCK")
-    sla_due = now + timedelta(minutes=60)
+    tcode = _generate_ticket_code(db)
+    # Increase default SLA to 2 hours to avoid immediate warning if threshold is 60m
+    sla_due = now + timedelta(minutes=120)
     db.add(
         Ticket(
             id=ticket_id,
+            ticket_code=tcode,
             site_code=settings.plant_site_code,
             asset_id=asset_id,
             title=f"Stop: {asset_id} - {reason[:120]}",
@@ -224,6 +279,52 @@ def open_stop(
         },
         corr_ticket,
     )
+
+    # WhatsApp Alert Logic for Stop/Ticket Creation
+    try:
+        ws_enabled = db.get(SystemConfig, "whatsappEnabled")
+        ws_phone = db.get(SystemConfig, "whatsappTargetPhone")
+        ws_template = db.get(SystemConfig, "whatsappMessageTemplate")
+
+        if ws_enabled and ws_enabled.config_value is True and ws_phone and ws_phone.config_value:
+            # Default template if not set
+            raw_msg = "🚀 AssetIQ Ticket Created\nID: {ticket_code}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}"
+            if ws_template and ws_template.config_value:
+                raw_msg = str(ws_template.config_value)
+
+            # Format the message
+            msg = (
+                raw_msg.replace("{id}", str(ticket_id))
+                .replace("{ticket_code}", str(tcode))
+                .replace("{ticket_id}", str(tcode))  # Alias for friendly ID
+                .replace("{asset_id}", str(asset_id))
+                .replace("{title}", f"Stop: {asset_id} - {reason[:120]}")
+                .replace("{priority}", "HIGH")
+                .replace("{created_at}", _to_friendly_local_time(now))
+                .replace("{source}", "AUTO")
+                .replace("{assigned_to}", "Unassigned")
+                .replace("{dept}", "General")
+                .replace("{sla_due}", _to_friendly_local_time(sla_due))
+                .replace("{site_code}", str(settings.plant_site_code))
+                .replace("{sla_state}", "OK")
+            )
+
+            db.add(
+                WhatsAppQueue(
+                    ticket_id=ticket_id,
+                    phone_number=str(ws_phone.config_value),
+                    message=msg,
+                    status="PENDING",
+                    sla_state="OK",
+                    created_at_utc=now,
+                )
+            )
+    except Exception as e:
+        import logging
+
+        logging.getLogger("assetiq").error(
+            f"Failed to queue WhatsApp alert for Stop {stop_id}: {e}"
+        )
 
     return {"stop_id": stop_id, "ticket_id": ticket_id, "sla_due_at_utc": sla_due.isoformat() + "Z"}
 
@@ -358,6 +459,7 @@ def create_ticket(
         final_asset_id = asset_id
 
     tid = _new_id("TCK")
+    tcode = _generate_ticket_code(db)
     now = _now()
     # default SLA 4 hours for manual tickets, 2h for HIGH
     sla_hours = 2 if priority == "HIGH" or priority == "CRITICAL" else 4
@@ -365,6 +467,7 @@ def create_ticket(
 
     t = Ticket(
         id=tid,
+        ticket_code=tcode,
         site_code=settings.plant_site_code,
         # Use final_asset_id to ensure FK consistency (even if soft constraint)
         asset_id=final_asset_id,
@@ -426,7 +529,7 @@ def create_ticket(
 
         if ws_enabled and ws_enabled.config_value is True and ws_phone and ws_phone.config_value:
             # Default template if not set
-            raw_msg = "🚀 AssetIQ Ticket Created\nID: {id}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}"
+            raw_msg = "🚀 AssetIQ Ticket Created\nID: {ticket_code}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}"
             if ws_template and ws_template.config_value:
                 raw_msg = str(ws_template.config_value)
 
@@ -434,15 +537,19 @@ def create_ticket(
             # Safe substitution to avoid crashes if template has invalid keys
             msg = (
                 raw_msg.replace("{id}", str(tid))
+                .replace("{ticket_code}", str(tcode))
+                .replace("{ticket_id}", str(tcode))  # Alias for friendly ID
                 .replace("{asset_id}", str(final_asset_id))
                 .replace("{title}", str(title))
                 .replace("{priority}", str(priority))
-                .replace("{created_at}", str(now.strftime("%Y-%m-%d %H:%M:%S")))
+                .replace("{priority}", str(priority))
+                .replace("{created_at}", _to_friendly_local_time(now))
                 .replace("{source}", str(source or "Unknown"))
                 .replace("{assigned_to}", str(assigned_to or "Unassigned"))
                 .replace("{dept}", str(dept or "General"))
-                .replace("{sla_due}", str(sla_due.strftime("%Y-%m-%d %H:%M:%S")))
+                .replace("{sla_due}", _to_friendly_local_time(sla_due))
                 .replace("{site_code}", str(settings.plant_site_code))
+                .replace("{sla_state}", "OK")
             )
 
             # Calculate SLA state for conditional routing
@@ -481,6 +588,12 @@ def close_ticket(
     if t.status == "CLOSED":
         return t
 
+    # Enforce mandatory fields
+    if not resolution_reason or not resolution_reason.strip():
+        raise ValueError("Resolution Reason is required.")
+    if not close_note or not close_note.strip():
+        raise ValueError("Resolution Notes are required.")
+
     t.status = "CLOSED"
     t.resolved_at_utc = _now()
     t.close_note = close_note
@@ -516,7 +629,7 @@ def close_ticket(
 
         if ws_enabled and ws_enabled.config_value is True and ws_phone and ws_phone.config_value:
             # Default template if not set
-            raw_msg = "✅ Ticket Closed\nID: {id}\nNote: {close_note}"
+            raw_msg = "✅ Ticket Closed\nID: {ticket_code}\nTitle: {title}\nNote: {close_note}"
             if ws_template and ws_template.config_value:
                 raw_msg = str(ws_template.config_value)
 
@@ -527,22 +640,32 @@ def close_ticket(
             # Format the message
             msg = (
                 raw_msg.replace("{id}", str(ticket_id))
+                .replace("{ticket_code}", str(t.ticket_code or t.id))
+                .replace("{ticket_id}", str(t.ticket_code or t.id))  # Alias
                 .replace("{asset_id}", str(t.asset_id))
                 .replace("{title}", str(t.title))
                 .replace("{priority}", str(t.priority))
+                .replace("{created_at}", _to_friendly_local_time(t.created_at_utc))
+                .replace("{source}", str(t.source or "Unknown"))
+                .replace("{assigned_to}", str(t.assigned_to_user_id or "Unassigned"))
+                .replace("{dept}", str(t.assigned_dept or "General"))
+                .replace("{sla_due}", _to_friendly_local_time(t.sla_due_at_utc))
                 .replace("{close_note}", str(close_note))
                 .replace("{resolution_reason}", str(resolution_reason or "N/A"))
-                .replace("{closed_at}", closed_at_str)
+                .replace("{closed_at}", _to_friendly_local_time(t.resolved_at_utc))
                 .replace("{site_code}", str(settings.plant_site_code))
+                .replace("{sla_state}", "CLOSED")
             )
 
-            # Calculate SLA state at closure
-            sla_state = "OK"  # Default
-            if t.sla_due_at_utc:
-                if t.resolved_at_utc and t.resolved_at_utc > t.sla_due_at_utc:
-                    sla_state = "BREACHED"
-                elif t.resolved_at_utc and t.resolved_at_utc <= t.sla_due_at_utc:
-                    sla_state = "OK"
+            # Calculate SLA state for conditional routing
+            # BROADCAST LOGIC: Ticket Close should be sent to ALL groups that were previously notified
+            sla_states = ["OK"]  # Always include OK
+            if t.sla_warning_sent:
+                sla_states.append("WARNING")
+            if t.sla_breach_sent:  # If it was breached, sending to BREACHED group too
+                sla_states.append("BREACHED")
+
+            final_sla_state_str = ",".join(sla_states)
 
             db.add(
                 WhatsAppQueue(
@@ -550,7 +673,7 @@ def close_ticket(
                     phone_number=str(ws_phone.config_value),
                     message=msg,
                     status="PENDING",
-                    sla_state=sla_state,
+                    sla_state=final_sla_state_str,
                     created_at_utc=_now(),
                 )
             )
@@ -2185,7 +2308,22 @@ def check_sla_warnings(db) -> int:
     log = logging.getLogger("assetiq")
 
     now = _now()
-    warning_threshold = now + timedelta(hours=1)  # Warning if SLA due within 1 hour
+
+    # Get dynamic threshold from config (default 60 mins)
+    threshold_mins = 60
+    th_row = db.get(SystemConfig, "whatsappSlaWarningThresholdMinutes")
+    if th_row:
+        try:
+            val = int(th_row.config_value)
+            if val > 0:
+                threshold_mins = val
+        except:
+            pass
+
+    # Get Template
+    ws_template = db.get(SystemConfig, "whatsappWarningMessageTemplate")
+
+    warning_threshold = now + timedelta(minutes=threshold_mins)
 
     # Find open tickets approaching SLA that haven't had warning sent
     from sqlalchemy import and_
@@ -2224,14 +2362,33 @@ def check_sla_warnings(db) -> int:
             remaining_mins = int(remaining.total_seconds() / 60)
 
             # Build warning message
-            msg = (
+            raw_msg = (
                 f"⚠️ SLA Warning\n"
-                f"Ticket: {t.id}\n"
+                f"Ticket: {t.ticket_code or t.id}\n"
                 f"Asset: {t.asset_id}\n"
                 f"Title: {t.title}\n"
                 f"Priority: {t.priority}\n"
                 f"Time Remaining: {remaining_mins} minutes\n"
                 f"SLA Due: {t.sla_due_at_utc.strftime('%H:%M')}"
+            )
+
+            if ws_template and ws_template.config_value:
+                raw_msg = str(ws_template.config_value)
+
+            msg = (
+                raw_msg.replace("{id}", str(t.id))
+                .replace("{ticket_code}", str(t.ticket_code or t.id))
+                .replace("{ticket_id}", str(t.ticket_code or t.id))  # Alias
+                .replace("{asset_id}", str(t.asset_id))
+                .replace("{title}", str(t.title))
+                .replace("{priority}", str(t.priority))
+                .replace("{created_at}", _to_friendly_local_time(t.created_at_utc))
+                .replace("{source}", str(t.source or "Unknown"))
+                .replace("{assigned_to}", str(t.assigned_to_user_id or "Unassigned"))
+                .replace("{dept}", str(t.assigned_dept or "General"))
+                .replace("{sla_due}", _to_friendly_local_time(t.sla_due_at_utc))
+                .replace("{site_code}", str(t.site_code))
+                .replace("{sla_state}", "WARNING")
             )
 
             db.add(
@@ -2254,4 +2411,112 @@ def check_sla_warnings(db) -> int:
 
     db.commit()
     log.info(f"sla_warnings_queued count={count}")
+    return count
+
+
+def check_sla_breaches(db) -> int:
+    """
+    Check for tickets that have BREACHED their SLA deadline and queue breach alerts.
+    """
+    import logging
+
+    from sqlalchemy import and_
+
+    log = logging.getLogger("assetiq")
+    now = _now()
+
+    # Find open tickets that have PASSED their SLA due date
+    # and haven't had a breach alert sent yet.
+    # Note: We query tickets where sla_due_at_utc < now
+    tickets = (
+        db.execute(
+            select(Ticket).where(
+                and_(
+                    Ticket.status.in_(["OPEN", "ACKNOWLEDGED", "ACK"]),
+                    Ticket.sla_due_at_utc.isnot(None),
+                    Ticket.sla_due_at_utc < now,  # Breached
+                    Ticket.sla_breach_sent.is_(False),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if not tickets:
+        return 0
+
+    # Check if WhatsApp is enabled
+    ws_enabled = db.get(SystemConfig, "whatsappEnabled")
+    ws_phone = db.get(SystemConfig, "whatsappTargetPhone")
+
+    if not (ws_enabled and ws_enabled.config_value is True and ws_phone and ws_phone.config_value):
+        # We still mark them as sent to avoid repeated checks if feature is disabled later?
+        # Better to just return 0 and rely on config check next time.
+        return 0
+
+    count = 0
+    for t in tickets:
+        try:
+            # Build breach message
+            overdue = now - t.sla_due_at_utc
+            overdue_mins = int(overdue.total_seconds() / 60)
+
+            ws_template = db.get(SystemConfig, "whatsappBreachMessageTemplate")
+
+            raw_msg = (
+                f"🔥 SLA BREACHED\n"
+                f"Ticket: {t.ticket_code or t.id}\n"
+                f"Asset: {t.asset_id}\n"
+                f"Title: {t.title}\n"
+                f"Priority: {t.priority}\n"
+                f"Overdue By: {overdue_mins} minutes\n"
+                f"SLA Due: {t.sla_due_at_utc.strftime('%H:%M')}"
+            )
+
+            if ws_template and ws_template.config_value:
+                raw_msg = str(ws_template.config_value)
+
+            msg = (
+                raw_msg.replace("{id}", str(t.id))
+                .replace("{ticket_code}", str(t.ticket_code or t.id))
+                .replace("{ticket_id}", str(t.ticket_code or t.id))  # Alias
+                .replace("{asset_id}", str(t.asset_id))
+                .replace("{title}", str(t.title))
+                .replace("{priority}", str(t.priority))
+                .replace("{created_at}", _to_friendly_local_time(t.created_at_utc))
+                .replace("{source}", str(t.source or "Unknown"))
+                .replace("{assigned_to}", str(t.assigned_to_user_id or "Unassigned"))
+                .replace("{dept}", str(t.assigned_dept or "General"))
+                .replace("{sla_due}", _to_friendly_local_time(t.sla_due_at_utc))
+                .replace("{site_code}", str(t.site_code))
+                .replace("{sla_state}", "BREACHED")
+            )
+
+            db.add(
+                WhatsAppQueue(
+                    ticket_id=t.id,
+                    phone_number=str(ws_phone.config_value),
+                    message=msg,
+                    status="PENDING",
+                    sla_state="BREACHED",  # Important for routing
+                    created_at_utc=now,
+                )
+            )
+
+            # Mark breach as sent
+            t.sla_breach_sent = True
+            count += 1
+
+            # Log activity
+            log_ticket_activity(
+                db, t.id, "SLA_BREACH", f"SLA Breached by {overdue_mins} mins", "SYSTEM"
+            )
+
+        except Exception as e:
+            log.error(f"Failed to queue SLA breach for ticket {t.id}: {e}")
+
+    db.commit()
+    if count > 0:
+        log.info(f"sla_breaches_queued count={count}")
     return count

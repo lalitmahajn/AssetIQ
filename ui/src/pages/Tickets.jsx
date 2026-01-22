@@ -21,9 +21,14 @@ function SlaTimer({ due }) {
       }
       const hrs = Math.floor(diff / 3600000);
       const mins = Math.floor((diff % 3600000) / 60000);
-      setRem(`${hrs}h ${mins}m`);
-      if (hrs < 1) setColor("text-orange-600 font-semibold"); // < 1 hour
-      else setColor("text-green-600");
+
+      if (hrs < 1) {
+        setRem(`[WARNING] ${hrs}h ${mins}m`);
+        setColor("text-orange-600 font-bold");
+      } else {
+        setRem(`[OK] ${hrs}h ${mins}m`);
+        setColor("text-green-600 font-medium");
+      }
     };
     tick();
     const i = setInterval(tick, 60000);
@@ -35,16 +40,16 @@ function SlaTimer({ due }) {
 }
 
 function timeAgo(dateStr) {
-    if (!dateStr) return "-";
-    const diff = new Date() - new Date(dateStr);
-    const mins = Math.floor(diff / 60000);
-    const hrs = Math.floor(mins / 60);
-    const days = Math.floor(hrs / 24);
+  if (!dateStr) return "-";
+  const diff = new Date() - new Date(dateStr);
+  const mins = Math.floor(diff / 60000);
+  const hrs = Math.floor(mins / 60);
+  const days = Math.floor(hrs / 24);
 
-    if (days > 0) return `${days}d ago`;
-    if (hrs > 0) return `${hrs}h ago`;
-    if (mins > 0) return `${mins}m ago`;
-    return "Just now";
+  if (days > 0) return `${days}d ago`;
+  if (hrs > 0) return `${hrs}h ago`;
+  if (mins > 0) return `${mins}m ago`;
+  return "Just now";
 }
 
 function SourceIcon({ source }) {
@@ -150,31 +155,31 @@ export default function Tickets() {
 
   // Filtered Items
   const filteredItems = items.filter(t => {
-      // 1. My Tasks
-      if (myTasksOnly && t.assigned_to !== currentUser) return false;
-      
-      // 2. Filters
-      if (filters.source && t.source !== filters.source) return false;
-      if (filters.asset_id && !t.asset_id.toLowerCase().includes(filters.asset_id.toLowerCase())) return false;
-      if (filters.dept && t.assigned_dept !== filters.dept) return false;
-      if (filters.status && t.status !== filters.status) return false;
-      if (filters.owner && !(t.assigned_to || "").toLowerCase().includes(filters.owner.toLowerCase())) return false;
+    // 1. My Tasks
+    if (myTasksOnly && t.assigned_to !== currentUser) return false;
 
-      if (filters.sla) {
-        // Compute SLA state locally to match Timer logic roughly
-        const due = t.sla_due_at_utc ? new Date(t.sla_due_at_utc) : null;
-        if (!due) return false; // Can't filter by SLA if no SLA
-        const now = new Date();
-        const diff = due - now;
-        
-        let state = "OK";
-        if (diff <= 0) state = "BREACHED";
-        else if (diff < 3600000) state = "WARNING"; // < 1hr
+    // 2. Filters
+    if (filters.source && t.source !== filters.source) return false;
+    if (filters.asset_id && !t.asset_id.toLowerCase().includes(filters.asset_id.toLowerCase())) return false;
+    if (filters.dept && t.assigned_dept !== filters.dept) return false;
+    if (filters.status && t.status !== filters.status) return false;
+    if (filters.owner && !(t.assigned_to || "").toLowerCase().includes(filters.owner.toLowerCase())) return false;
 
-        if (filters.sla !== state) return false;
-      }
+    if (filters.sla) {
+      // Compute SLA state locally to match Timer logic roughly
+      const due = t.sla_due_at_utc ? new Date(t.sla_due_at_utc) : null;
+      if (!due) return false; // Can't filter by SLA if no SLA
+      const now = new Date();
+      const diff = due - now;
 
-      return true;
+      let state = "OK";
+      if (diff <= 0) state = "BREACHED";
+      else if (diff < 3600000) state = "WARNING"; // < 1hr
+
+      if (filters.sla !== state) return false;
+    }
+
+    return true;
   });
 
   // Handlers
@@ -190,19 +195,19 @@ export default function Tickets() {
 
   async function searchAssets(q) {
     setNewAsset(q);
-    if (q.length < 2) { 
-        setAssetSuggestions([]); 
-        setShowAssetDrop(false); 
-        return; 
+    if (q.length < 2) {
+      setAssetSuggestions([]);
+      setShowAssetDrop(false);
+      return;
     }
     setIsSearching(true);
     try {
       const r = await apiGet(`/master/assets/list?q=${q}&limit=5`);
       setAssetSuggestions(r || []);
       setShowAssetDrop(true);
-    } catch (e) { 
+    } catch (e) {
     } finally {
-        setIsSearching(false);
+      setIsSearching(false);
     }
   }
 
@@ -262,58 +267,58 @@ export default function Tickets() {
           </button>
         </div>
       </div>
-      
+
       {/* FILTER BAR */}
       {showFilters && (
         <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm animate-fade-in-down grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <div>
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Source</label>
-                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.source} onChange={e => setFilters({...filters, source: e.target.value})}>
-                    <option value="">All Sources</option>
-                    <option value="MANUAL">Manual</option>
-                    <option value="AUTO">System</option>
-                </select>
-            </div>
-            <div>
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Asset ID</label>
-                <input className="w-full text-sm border-gray-300 rounded-md" placeholder="Search..." value={filters.asset_id} onChange={e => setFilters({...filters, asset_id: e.target.value})} />
-            </div>
-            <div>
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Department</label>
-                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.dept} onChange={e => setFilters({...filters, dept: e.target.value})}>
-                    <option value="">All Depts</option>
-                    <option value="Maintenance">Maintenance</option>
-                    <option value="Electrical">Electrical</option>
-                    <option value="Mechanical">Mechanical</option>
-                    <option value="Instrumentation">Instrumentation</option>
-                    <option value="Production">Production</option>
-                </select>
-            </div>
-            <div>
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Status</label>
-                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.status} onChange={e => setFilters({...filters, status: e.target.value})}>
-                    <option value="">All Active</option>
-                    <option value="OPEN">Open</option>
-                    <option value="ACK">Acknowledged</option>
-                </select>
-            </div>
-             <div>
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">SLA State</label>
-                <select className="w-full text-sm border-gray-300 rounded-md" value={filters.sla} onChange={e => setFilters({...filters, sla: e.target.value})}>
-                    <option value="">All States</option>
-                    <option value="BREACHED">Breached</option>
-                    <option value="WARNING">Warning</option>
-                    <option value="OK">On Track</option>
-                </select>
-            </div>
-             <div>
-                <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Owner</label>
-                <input className="w-full text-sm border-gray-300 rounded-md" placeholder="Search owner..." value={filters.owner} onChange={e => setFilters({...filters, owner: e.target.value})} />
-            </div>
-            {/* Clear Filters */}
-            <div className="col-span-full flex justify-end">
-                <button onClick={() => setFilters({source: "", asset_id: "", dept: "", status: "", sla: "", owner: ""})} className="text-xs text-red-600 hover:underline font-medium">Clear Filters</button>
-            </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Source</label>
+            <select className="w-full text-sm border-gray-300 rounded-md" value={filters.source} onChange={e => setFilters({ ...filters, source: e.target.value })}>
+              <option value="">All Sources</option>
+              <option value="MANUAL">Manual</option>
+              <option value="AUTO">System</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Asset ID</label>
+            <input className="w-full text-sm border-gray-300 rounded-md" placeholder="Search..." value={filters.asset_id} onChange={e => setFilters({ ...filters, asset_id: e.target.value })} />
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Department</label>
+            <select className="w-full text-sm border-gray-300 rounded-md" value={filters.dept} onChange={e => setFilters({ ...filters, dept: e.target.value })}>
+              <option value="">All Depts</option>
+              <option value="Maintenance">Maintenance</option>
+              <option value="Electrical">Electrical</option>
+              <option value="Mechanical">Mechanical</option>
+              <option value="Instrumentation">Instrumentation</option>
+              <option value="Production">Production</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Status</label>
+            <select className="w-full text-sm border-gray-300 rounded-md" value={filters.status} onChange={e => setFilters({ ...filters, status: e.target.value })}>
+              <option value="">All Active</option>
+              <option value="OPEN">Open</option>
+              <option value="ACK">Acknowledged</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">SLA State</label>
+            <select className="w-full text-sm border-gray-300 rounded-md" value={filters.sla} onChange={e => setFilters({ ...filters, sla: e.target.value })}>
+              <option value="">All States</option>
+              <option value="BREACHED">Breached</option>
+              <option value="WARNING">Warning</option>
+              <option value="OK">On Track</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Owner</label>
+            <input className="w-full text-sm border-gray-300 rounded-md" placeholder="Search owner..." value={filters.owner} onChange={e => setFilters({ ...filters, owner: e.target.value })} />
+          </div>
+          {/* Clear Filters */}
+          <div className="col-span-full flex justify-end">
+            <button onClick={() => setFilters({ source: "", asset_id: "", dept: "", status: "", sla: "", owner: "" })} className="text-xs text-red-600 hover:underline font-medium">Clear Filters</button>
+          </div>
         </div>
       )}
 
@@ -339,9 +344,9 @@ export default function Tickets() {
                   />
                   {/* New Asset Indicator */}
                   {!isSearching && newAsset.length >= 3 && !assetSuggestions.some(a => a.id.toLowerCase() === newAsset.toLowerCase()) && (
-                      <div className="absolute top-1 right-0 text-xs font-medium text-blue-600 animate-pulse">
-                          New Asset being created
-                      </div>
+                    <div className="absolute top-1 right-0 text-xs font-medium text-blue-600 animate-pulse">
+                      New Asset being created
+                    </div>
                   )}
                   {showAssetDrop && assetSuggestions.length > 0 && (
                     <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded-md mt-1 z-10">
@@ -440,6 +445,7 @@ export default function Tickets() {
               <tr key={t.id} className="hover:bg-gray-50 transition-colors group">
                 <td className="px-6 py-4"><SourceIcon source={t.source || "MANUAL"} /></td>
                 <td className="px-6 py-4">
+                  <div className="text-xs font-mono text-blue-600 mb-0.5">{t.ticket_code || t.id}</div>
                   <div className="font-bold text-gray-900">{t.asset_id}</div>
                   <div className="text-xs text-gray-400">{t.site_code}</div>
                 </td>
@@ -450,12 +456,12 @@ export default function Tickets() {
                   </div>
                 </td>
                 <td className="px-6 py-4">
-                    <div className="text-gray-900 font-medium text-sm">
-                        {new Date(t.created_at_utc).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit'})}
-                    </div>
-                    <div className="text-xs text-blue-600 font-semibold mt-0.5">
-                        {timeAgo(t.created_at_utc)}
-                    </div>
+                  <div className="text-gray-900 font-medium text-sm">
+                    {new Date(t.created_at_utc).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                  <div className="text-xs text-blue-600 font-semibold mt-0.5">
+                    {timeAgo(t.created_at_utc)}
+                  </div>
                 </td>
                 <td className="px-6 py-4 text-sm text-gray-600">{t.assigned_dept || "-"}</td>
                 <td className="px-6 py-4"><StatusBadge s={t.status} /></td>
@@ -521,6 +527,7 @@ function TicketDetail({ id, onBack, currentUser }) {
 
   async function doClose() {
     if (!reason) return alert("Please select a resolution reason.");
+    if (!note || !note.trim()) return alert("Please enter resolution notes.");
     try {
       await apiPost("/ui/tickets/close", { ticket_id: id, close_note: note || "Resolved", resolution_reason: reason });
       onBack(); // Go back to list on close
@@ -547,7 +554,7 @@ function TicketDetail({ id, onBack, currentUser }) {
 
           <h1 className="text-3xl font-bold text-gray-900 mb-2">{t.title}</h1>
           <div className="flex gap-4 text-sm text-gray-600 mb-6 font-mono">
-            <span>ID: {t.id}</span>
+            <span>ID: <span className="font-bold text-gray-800">{t.ticket_code || t.id}</span></span>
             <span>&bull;</span>
             <span>Asset: <span className="font-bold text-gray-900">{t.asset_id}</span></span>
             <span>&bull;</span>
@@ -571,7 +578,7 @@ function TicketDetail({ id, onBack, currentUser }) {
               <h3 className="font-bold text-green-900">Resolve Ticket</h3>
 
               <div>
-                <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Root Cause (Reason)</label>
+                <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Root Cause (Reason) <span className="text-red-500">*</span></label>
                 <select
                   className="w-full border-gray-300 rounded-lg p-2"
                   value={reason}
@@ -587,7 +594,7 @@ function TicketDetail({ id, onBack, currentUser }) {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Resolution Notes</label>
+                <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Resolution Notes <span className="text-red-500">*</span></label>
                 <textarea
                   className="w-full border-gray-300 rounded-lg p-2 h-20"
                   placeholder="What action did you take?"

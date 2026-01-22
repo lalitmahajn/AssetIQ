@@ -79,11 +79,11 @@ def main() -> None:
                 log.error("report_archive_failed", extra={"err": str(e)})
                 send_critical_alert("plant_worker_archive_fail", str(e))
 
-        # Check for SLA warnings every 5 minutes
+        # Check for SLA warnings every 20 seconds
         now = time.time()
-        if now - last_sla_check > 300:
+        if now - last_sla_check > 20:
             try:
-                from apps.plant_backend.services import check_sla_warnings
+                from apps.plant_backend.services import check_sla_breaches, check_sla_warnings
                 from common_core.db import PlantSessionLocal
 
                 db = PlantSessionLocal()
@@ -93,6 +93,13 @@ def main() -> None:
                         log.info(
                             "sla_warnings_sent",
                             extra={"component": "plant_worker", "count": warned},
+                        )
+
+                    breached = check_sla_breaches(db)
+                    if breached:
+                        log.info(
+                            "sla_breaches_sent",
+                            extra={"component": "plant_worker", "count": breached},
                         )
                 finally:
                     db.close()
