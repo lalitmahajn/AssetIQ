@@ -57,6 +57,7 @@ def get_filter_options(user=Depends(require_perm("report.view"))):
 
 class ReportRequestIn(BaseModel):
     report_type: str
+    custom_name: str | None = None
     date_from: str
     date_to: str
     filters: dict | None = {}
@@ -64,6 +65,7 @@ class ReportRequestIn(BaseModel):
 
 @router.post("/request")
 def request_manual_report(body: ReportRequestIn, user=Depends(require_perm("report.manage"))):
+    print(f"DEBUG: Report Request Received: {body.report_type}, Custom Name: '{body.custom_name}'")
     db = PlantSessionLocal()
     try:
         rr = services.report_request_create_and_generate_csv(
@@ -72,6 +74,7 @@ def request_manual_report(body: ReportRequestIn, user=Depends(require_perm("repo
             date_from=body.date_from,
             date_to=body.date_to,
             filters=body.filters or {},
+            custom_name=body.custom_name,
             actor_user_id=user["sub"],
             actor_station_code=None,
             request_id=None,

@@ -22,6 +22,8 @@ const REPORT_TYPES = [
 
 export default function Reports() {
     const [reportType, setReportType] = useState("daily_summary");
+    const [customName, setCustomName] = useState("");
+    const [showModal, setShowModal] = useState(false);
     const [dateFrom, setDateFrom] = useState(isoToday());
     const [dateTo, setDateTo] = useState(isoToday());
     const [timeFrom, setTimeFrom] = useState("00:00");
@@ -85,18 +87,20 @@ export default function Reports() {
 
             const result = await apiPost("/reports/request", {
                 report_type: reportType,
+                custom_name: customName || undefined,
                 date_from: fromDateTime,
                 date_to: toDateTime,
                 filters: filters
             });
-            
+
             // Store the generated report info for instant download
             if (result && result.id) {
                 setLastGenerated({ id: result.id, status: result.status });
             }
-            
+
             // Refresh vault list
             await load();
+            setShowModal(false); // Close modal on success
         } catch (e) {
             setErr(e.message);
         } finally {
@@ -228,151 +232,170 @@ export default function Reports() {
 
     return (
         <div className="max-w-6xl mx-auto py-6 space-y-8">
+            {/* Header Actions */}
             <div className="flex items-center justify-between">
                 <div>
-                    <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Reporting System</h2>
-                    <p className="text-gray-500 text-sm mt-1">Generate and access historical downtime and summary reports.</p>
+                    <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Reporting Vault</h2>
+                    <p className="text-gray-500 text-sm mt-1">Access historical reports or generate new ones.</p>
                 </div>
-                <button onClick={load} className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
-                </button>
+                <div className="flex gap-2">
+                    <button onClick={load} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg transition-colors">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+                    </button>
+                    <button
+                        onClick={() => setShowModal(true)}
+                        className="h-10 px-4 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-sm transition-all flex items-center gap-2"
+                    >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
+                        New Report
+                    </button>
+                </div>
             </div>
 
             {err && <div className="bg-red-50 border border-red-200 text-red-600 p-4 rounded-xl text-sm">{err}</div>}
 
-            {/* Manual Trigger Section */}
-            <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
-                <h3 className="text-lg font-bold text-gray-800 mb-6 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-blue-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" /></svg>
-                    Generate Custom Report
-                </h3>
-                <div className="grid md:grid-cols-6 gap-4 items-end">
-                    <div className="space-y-1.5 md:col-span-2">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Report Type</label>
-                        <select
-                            value={reportType}
-                            onChange={e => setReportType(e.target.value)}
-                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-4 text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all outline-none"
-                        >
-                            {categories.map(cat => (
-                                <optgroup key={cat} label={`── ${cat} Reports ──`}>
-                                    {REPORT_TYPES.filter(r => r.category === cat).map(r => (
-                                        <option key={r.value} value={r.value}>
-                                            {r.label} ({r.format})
-                                        </option>
-                                    ))}
-                                </optgroup>
-                            ))}
-                        </select>
-                    </div>
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">From Date</label>
-                        <input
-                            type="date"
-                            value={dateFrom}
-                            onChange={e => setDateFrom(e.target.value)}
-                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">From Time</label>
-                        <input
-                            type="time"
-                            value={timeFrom}
-                            onChange={e => setTimeFrom(e.target.value)}
-                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">To Date</label>
-                        <input
-                            type="date"
-                            value={dateTo}
-                            onChange={e => setDateTo(e.target.value)}
-                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                    <div className="space-y-1.5">
-                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">To Time</label>
-                        <input
-                            type="time"
-                            value={timeTo}
-                            onChange={e => setTimeTo(e.target.value)}
-                            className="w-full h-11 bg-gray-50 border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                        />
-                    </div>
-                </div>
-
-                {/* Report description */}
-                {selectedReport && (
-                    <div className="mt-4 flex items-center gap-3 p-3 bg-blue-50 rounded-xl border border-blue-100">
-                        <div className={`px-2 py-1 rounded-md text-xs font-bold ${selectedReport.format === 'PDF' ? 'bg-red-100 text-red-600' : 'bg-green-100 text-green-600'}`}>
-                            {selectedReport.format}
+            {/* Last Generated Banner */}
+            {lastGenerated && lastGenerated.status === "generated" && (
+                <div className="bg-green-50 border border-green-100 p-4 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                        <div className="bg-green-100 p-2 rounded-lg text-green-600">
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                         </div>
-                        <p className="text-sm text-blue-800">{selectedReport.description}</p>
+                        <div>
+                            <h4 className="font-bold text-green-900">Report Ready!</h4>
+                            <p className="text-green-700 text-xs">Your report has been generated successfully.</p>
+                        </div>
                     </div>
-                )}
-
-                {/* Dynamic filters */}
-                {renderFilters()}
-
-                <div className="mt-6 flex items-center gap-4">
-                    <button
-                        onClick={handleGenerate}
-                        disabled={loading}
-                        className="h-11 px-8 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 text-white rounded-xl font-bold text-sm shadow-lg shadow-blue-200 transition-all flex items-center justify-center gap-2"
-                    >
-                        {loading && (
-                            <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                        )}
-                        {loading ? "Generating Report..." : "Generate Report"}
-                    </button>
-                    
-                    {/* View/Download buttons - only visible after report is generated */}
-                    {lastGenerated && lastGenerated.status === "generated" && (
-                        <>
-                            <button
-                                onClick={() => downloadLastGenerated(true)}
-                                className="h-11 px-5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-purple-200 transition-all flex items-center justify-center gap-2"
-                                title={selectedReport?.format === 'PDF' ? 'Open in browser' : 'Open with default app'}
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-                                </svg>
-                                View
-                            </button>
-                            <button
-                                onClick={() => downloadLastGenerated(false)}
-                                className="h-11 px-5 bg-green-600 hover:bg-green-700 text-white rounded-xl font-bold text-sm shadow-lg shadow-green-200 transition-all flex items-center justify-center gap-2"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-                                </svg>
-                                Download
-                            </button>
-                        </>
-                    )}
-                    
-                    {loading && (
-                        <span className="text-sm font-medium text-blue-600 animate-pulse flex items-center gap-2">
-                            Processing... Please wait
-                        </span>
-                    )}
-                    
-                    {lastGenerated && lastGenerated.status === "generated" && !loading && (
-                        <span className="text-sm font-medium text-green-600 flex items-center gap-2">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
-                            </svg>
-                            Report Ready!
-                        </span>
-                    )}
+                    <div className="flex gap-2">
+                        <button
+                            onClick={() => downloadLastGenerated(true)}
+                            className="px-4 py-2 bg-white text-green-700 border border-green-200 hover:bg-green-50 rounded-lg font-bold text-sm transition-all"
+                        >
+                            View
+                        </button>
+                        <button
+                            onClick={() => downloadLastGenerated(false)}
+                            className="px-4 py-2 bg-green-600 text-white hover:bg-green-700 rounded-lg font-bold text-sm shadow-sm transition-all"
+                        >
+                            Download
+                        </button>
+                    </div>
                 </div>
-            </div>
+            )}
+
+            {/* Generation Modal */}
+            {showModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="p-6 border-b border-gray-100 bg-gray-50/50 flex justify-between items-center">
+                            <div>
+                                <h3 className="text-xl font-bold text-gray-900">Generate Report</h3>
+                                <p className="text-sm text-gray-500">Configure parameters for your custom report</p>
+                            </div>
+                            <button onClick={() => setShowModal(false)} className="text-gray-400 hover:text-gray-600">
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+
+                        <div className="p-6 space-y-6">
+                            {/* Two Column Layout */}
+                            <div className="grid md:grid-cols-2 gap-6">
+                                {/* Left: Type & Name */}
+                                <div className="space-y-4">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Report Type</label>
+                                        <select
+                                            value={reportType}
+                                            onChange={e => setReportType(e.target.value)}
+                                            className="w-full h-11 bg-white border border-gray-200 rounded-xl px-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+                                        >
+                                            {categories.map(cat => (
+                                                <optgroup key={cat} label={`── ${cat} Reports ──`}>
+                                                    {REPORT_TYPES.filter(r => r.category === cat).map(r => (
+                                                        <option key={r.value} value={r.value}>
+                                                            {r.label} ({r.format})
+                                                        </option>
+                                                    ))}
+                                                </optgroup>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    {/* Description Box */}
+                                    {selectedReport && (
+                                        <div className="p-3 bg-blue-50 rounded-xl border border-blue-100 text-sm text-blue-800 leading-relaxed">
+                                            {selectedReport.description}
+                                        </div>
+                                    )}
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-gray-400 uppercase tracking-wider">Custom Name (Optional)</label>
+                                        <input
+                                            type="text"
+                                            value={customName}
+                                            onChange={e => setCustomName(e.target.value)}
+                                            placeholder="e.g. Shift_A_Review"
+                                            className="w-full h-11 bg-white border border-gray-200 rounded-xl px-3 text-sm outline-none focus:ring-2 focus:ring-blue-500 shadow-sm"
+                                        />
+                                        <p className="text-[10px] text-gray-400 text-right">Will be prefixed to filename</p>
+                                    </div>
+                                </div>
+
+                                {/* Right: Date & Time */}
+                                <div className="space-y-4 bg-gray-50 p-4 rounded-xl border border-gray-100">
+                                    <h4 className="text-sm font-bold text-gray-700 border-b border-gray-200 pb-2 mb-2">Time Period</h4>
+                                    <div className="grid grid-cols-2 gap-3">
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase">From Date</label>
+                                            <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} className="w-full h-9 rounded-lg border-gray-200 text-sm" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase">Time</label>
+                                            <input type="time" value={timeFrom} onChange={e => setTimeFrom(e.target.value)} className="w-full h-9 rounded-lg border-gray-200 text-sm" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase">To Date</label>
+                                            <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} className="w-full h-9 rounded-lg border-gray-200 text-sm" />
+                                        </div>
+                                        <div className="space-y-1">
+                                            <label className="text-[10px] font-bold text-gray-400 uppercase">Time</label>
+                                            <input type="time" value={timeTo} onChange={e => setTimeTo(e.target.value)} className="w-full h-9 rounded-lg border-gray-200 text-sm" />
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Dynamic Filters */}
+                            <div className="pt-2 border-t border-gray-100">
+                                {renderFilters()}
+                            </div>
+                        </div>
+
+                        <div className="p-4 bg-gray-50 border-t border-gray-100 flex justify-end gap-3">
+                            <button
+                                onClick={() => setShowModal(false)}
+                                className="px-5 py-2.5 text-gray-600 font-bold text-sm hover:bg-gray-200 rounded-lg transition-colors"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleGenerate}
+                                disabled={loading}
+                                className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-sm shadow-lg shadow-blue-200 transition-all flex items-center gap-2 disabled:bg-gray-300 disabled:shadow-none"
+                            >
+                                {loading ? (
+                                    <>
+                                        <svg className="animate-spin h-4 w-4 text-white" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" /></svg>
+                                        Generating...
+                                    </>
+                                ) : (
+                                    "Generate"
+                                )}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             <div className="max-w-4xl">
                 {/* Report Vault */}
@@ -408,6 +431,6 @@ export default function Reports() {
                     </div>
                 </div>
             </div>
-        </div>
+        </div >
     );
 }

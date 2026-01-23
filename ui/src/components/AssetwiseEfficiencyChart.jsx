@@ -64,15 +64,20 @@ export default function AssetwiseEfficiencyChart() {
         return "bg-red-100 text-red-700 border-red-200";
     };
 
+    const formatMetric = (val) => {
+        if (val === undefined || val === null || isNaN(val)) return "-";
+        return Math.round(val).toLocaleString();
+    };
+
     const renderRow = (node, hierarchy = []) => {
         const isExp = expanded[node.asset_id];
         const hasChildren = node.children && node.children.length > 0;
-        
+
         // Tree Guides using fixed width cells and SVGs
         const renderGuides = () => {
             return hierarchy.map((isLast, index) => {
                 const isCurrent = index === hierarchy.length - 1;
-                
+
                 return (
                     <div key={index} className="w-8 h-auto flex-shrink-0 flex justify-center bg-transparent relative">
                         {!isCurrent ? (
@@ -97,7 +102,7 @@ export default function AssetwiseEfficiencyChart() {
                 <tr className="hover:bg-gray-50 border-b border-gray-100 last:border-0 transition-colors">
                     <td className="p-0 pr-4 whitespace-nowrap">
                         <div className="flex items-stretch h-full min-h-[48px]">
-                            
+
                             {/* 1. Indentation Guides */}
                             {renderGuides()}
 
@@ -109,13 +114,13 @@ export default function AssetwiseEfficiencyChart() {
                                     <div className="absolute bottom-0 top-1/2 w-px bg-gray-300 left-1/2 -ml-px"></div>
                                     // Note: top-1/2 essentially starts from center where the expander is
                                 )}
-                                
+
                                 {/* Connector adjustment for root nodes? 
                                     If I am a child (hierarchy > 0), the guide cell to my left drew a line to my center. 
                                     So the grid connects perfectly. 
                                 */}
 
-                                <div 
+                                <div
                                     className={`w-5 h-5 flex items-center justify-center rounded-sm transition-colors cursor-pointer z-10 ${hasChildren ? 'hover:bg-gray-200 bg-gray-100 border border-gray-300' : ''}`}
                                     onClick={() => hasChildren && toggle(node.asset_id)}
                                 >
@@ -158,9 +163,18 @@ export default function AssetwiseEfficiencyChart() {
                     <td className="py-3 px-4 text-sm text-gray-500 whitespace-nowrap font-mono text-right">
                         {node.downtime_minutes.toLocaleString()} <span className="text-xs text-gray-300">min</span>
                     </td>
+                    <td className="py-3 px-4 text-sm text-gray-500 whitespace-nowrap font-mono text-right">
+                        {formatMetric(node.mttr_minutes)} <span className="text-xs text-gray-300">min</span>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-500 whitespace-nowrap font-mono text-right">
+                        {formatMetric(node.mttf_minutes)} <span className="text-xs text-gray-300">min</span>
+                    </td>
+                    <td className="py-3 px-4 text-sm text-gray-500 whitespace-nowrap font-mono text-right">
+                        {formatMetric(node.mtbf_minutes)} <span className="text-xs text-gray-300">min</span>
+                    </td>
                 </tr>
-                {hasChildren && isExp && node.children.map((child, i) => 
-                     renderRow(child, [...hierarchy, i === node.children.length - 1])
+                {hasChildren && isExp && node.children.map((child, i) =>
+                    renderRow(child, [...hierarchy, i === node.children.length - 1])
                 )}
             </React.Fragment>
         );
@@ -171,11 +185,11 @@ export default function AssetwiseEfficiencyChart() {
             <div className="p-6 border-b border-gray-100 flex justify-between items-center bg-white">
                 <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2">
                     <span className="w-2 h-6 bg-gradient-to-b from-green-500 to-emerald-400 rounded-sm"></span>
-                    Assetwise Efficiency 
+                    Assetwise Efficiency
                 </h3>
                 <div className="flex items-center gap-2">
-                    <select 
-                        value={days} 
+                    <select
+                        value={days}
                         onChange={(e) => setDays(Number(e.target.value))}
                         className="text-sm border-gray-300 rounded-md shadow-sm focus:border-green-500 focus:ring-green-500"
                     >
@@ -186,7 +200,7 @@ export default function AssetwiseEfficiencyChart() {
                     </select>
                 </div>
             </div>
-            
+
             <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
                     <thead>
@@ -195,6 +209,9 @@ export default function AssetwiseEfficiencyChart() {
                             <th className="py-3 px-4 w-1/5">Efficiency</th>
                             <th className="py-3 px-4 text-right w-1/5">Uptime</th>
                             <th className="py-3 px-4 text-right w-1/5">Downtime</th>
+                            <th className="py-3 px-4 text-right w-1/12">MTTR</th>
+                            <th className="py-3 px-4 text-right w-1/12">MTTF</th>
+                            <th className="py-3 px-4 text-right w-1/12">MTBF</th>
                         </tr>
                     </thead>
                     <tbody>

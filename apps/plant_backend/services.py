@@ -42,6 +42,7 @@ def _generate_ticket_code(db) -> str:
     Counter resets at local midnight.
     """
     from sqlalchemy import func
+
     from apps.plant_backend.models import Ticket
 
     # Fixed offset for IST (UTC+5:30)
@@ -633,10 +634,6 @@ def close_ticket(
             if ws_template and ws_template.config_value:
                 raw_msg = str(ws_template.config_value)
 
-            closed_at_str = (
-                t.resolved_at_utc.strftime("%Y-%m-%d %H:%M:%S") if t.resolved_at_utc else "N/A"
-            )
-
             # Format the message
             msg = (
                 raw_msg.replace("{id}", str(ticket_id))
@@ -984,23 +981,82 @@ def _parse_iso_date(s: str) -> datetime:
     return datetime.fromisoformat(s)
 
 
+def _enforce_vault_retention(vault_root: str):
+    import glob
+    import logging
+    import os
+
+    log = logging.getLogger("assetiq")
+
+    try:
+        # 1. Retention Days (from Config)
+        retention_days = settings.report_retention_days
+        cutoff = _now() - timedelta(days=retention_days)
+
+        # Get all report files
+        files = []
+        if os.path.exists(vault_root):
+            # Recursively find all valid report files
+            for ext in ["*.pdf", "*.xlsx", "*.csv"]:
+                files.extend(glob.glob(os.path.join(vault_root, ext)))
+
+        # Sort by mtime (oldest first)
+        files.sort(key=os.path.getmtime)
+
+        # Delete by Age
+        items_to_keep = []
+        for f in files:
+            mtime = datetime.fromtimestamp(os.path.getmtime(f))
+            if mtime < cutoff:
+                try:
+                    os.remove(f)
+                    log.info(f"Deleted old report (retention policy): {f}")
+                except Exception as e:
+                    log.error(f"Failed to delete {f}: {e}")
+            else:
+                items_to_keep.append(f)
+
+        # 2. Max Files Limit (from Config)
+        max_files = settings.report_max_files
+        if len(items_to_keep) > max_files:
+            # Delete oldest exceeding limit
+            excess = len(items_to_keep) - max_files
+            for i in range(excess):
+                f = items_to_keep[i]
+                try:
+                    os.remove(f)
+                    log.info(f"Deleted report (max limit {max_files}): {f}")
+                except Exception as e:
+                    log.error(f"Failed to delete excess {f}: {e}")
+
+    except Exception as e:
+        log.error(f"Retention enforcement failed: {e}")
+
+
 def report_request_create_and_generate_csv(
     db,
     report_type: str,
     date_from: str,
     date_to: str,
     filters: dict,
+    custom_name: str | None,
     actor_user_id: str,
     actor_station_code: str | None,
     request_id: str | None,
 ) -> ReportRequest:
     import json
     import os
+    import re
 
     from apps.plant_backend.models import StopQueue  # Use StopQueue from models.py
 
     dt_from = _parse_iso_date(date_from)
     dt_to = _parse_iso_date(date_to)
+
+    safe_custom_name = None
+    if custom_name:
+        safe_custom_name = re.sub(r"[^a-zA-Z0-9_\-]", "_", custom_name.strip())[:64]
+
     if dt_to < dt_from:
         raise ValueError("date_to must be >= date_from")
 
@@ -1043,7 +1099,8 @@ def report_request_create_and_generate_csv(
             from openpyxl.styles import Alignment, Font, PatternFill
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Asset_Downtime_{rr.site_code}_{date_str}.xlsx"
+            prefix = safe_custom_name if safe_custom_name else "Asset_Downtime"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
             stops = (
@@ -1128,7 +1185,8 @@ def report_request_create_and_generate_csv(
             from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Ticket_Performance_{rr.site_code}_{date_str}.pdf"
+            prefix = safe_custom_name if safe_custom_name else "Ticket_Performance"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.pdf"
             file_path = os.path.join(vault_root, filename)
 
             tickets = (
@@ -1268,7 +1326,8 @@ def report_request_create_and_generate_csv(
             from openpyxl.styles import Alignment, Font, PatternFill
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"SLA_Breach_{rr.site_code}_{date_str}.xlsx"
+            prefix = safe_custom_name if safe_custom_name else "SLA_Breach"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
             tickets = (
@@ -1360,7 +1419,8 @@ def report_request_create_and_generate_csv(
             from openpyxl.styles import Alignment, Font, PatternFill
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Asset_Health_{rr.site_code}_{date_str}.xlsx"
+            prefix = safe_custom_name if safe_custom_name else "Asset_Health"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
             # Get filter options
@@ -1488,7 +1548,8 @@ def report_request_create_and_generate_csv(
             from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Stop_Reason_Analysis_{rr.site_code}_{date_str}.pdf"
+            prefix = safe_custom_name if safe_custom_name else "Stop_Reason_Analysis"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.pdf"
             file_path = os.path.join(vault_root, filename)
 
             stops = (
@@ -1580,7 +1641,8 @@ def report_request_create_and_generate_csv(
             from openpyxl.styles import Alignment, Font, PatternFill
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Personnel_Performance_{rr.site_code}_{date_str}.xlsx"
+            prefix = safe_custom_name if safe_custom_name else "Personnel_Performance"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
             filter_user = filters.get("user_id")
@@ -1663,7 +1725,8 @@ def report_request_create_and_generate_csv(
             from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Critical_Asset_{rr.site_code}_{date_str}.pdf"
+            prefix = safe_custom_name if safe_custom_name else "Critical_Asset"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.pdf"
             file_path = os.path.join(vault_root, filename)
 
             critical_assets = (
@@ -1805,7 +1868,8 @@ def report_request_create_and_generate_csv(
             from openpyxl.styles import Alignment, Font, PatternFill
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Department_Performance_{rr.site_code}_{date_str}.xlsx"
+            prefix = safe_custom_name if safe_custom_name else "Department_Performance"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
             tickets = (
@@ -1890,7 +1954,8 @@ def report_request_create_and_generate_csv(
             from openpyxl.styles import Alignment, Font, PatternFill
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Audit_Trail_{rr.site_code}_{date_str}.xlsx"
+            prefix = safe_custom_name if safe_custom_name else "Audit_Trail"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.xlsx"
             file_path = os.path.join(vault_root, filename)
 
             filter_entity = filters.get("entity_type")
@@ -1954,7 +2019,8 @@ def report_request_create_and_generate_csv(
             from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Trend_Analysis_{rr.site_code}_{date_str}.pdf"
+            prefix = safe_custom_name if safe_custom_name else "Trend_Analysis"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.pdf"
             file_path = os.path.join(vault_root, filename)
 
             stops = (
@@ -2084,7 +2150,8 @@ def report_request_create_and_generate_csv(
             from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
             date_str = f"{dt_from.strftime('%d%b%y')}_to_{dt_to.strftime('%d%b%y')}"
-            filename = f"Summary_{rr.site_code}_{date_str}.pdf"
+            prefix = safe_custom_name if safe_custom_name else "Summary"
+            filename = f"{prefix}_{rr.site_code}_{date_str}.pdf"
             file_path = os.path.join(vault_root, filename)
 
             stops = (
@@ -2294,6 +2361,9 @@ def report_request_create_and_generate_csv(
             request_id,
         )
 
+    # Enforce retention policy (cleanup old files)
+    _enforce_vault_retention(settings.report_vault_root)
+
     return rr
 
 
@@ -2317,7 +2387,7 @@ def check_sla_warnings(db) -> int:
             val = int(th_row.config_value)
             if val > 0:
                 threshold_mins = val
-        except:
+        except (ValueError, TypeError):
             pass
 
     # Get Template

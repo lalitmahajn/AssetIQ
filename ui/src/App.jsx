@@ -67,10 +67,10 @@ export default function App() {
 
     const onAuthError = () => handleLogout();
     const onConfigUpdated = () => fetchConfig();
-    
+
     window.addEventListener("auth:error", onAuthError);
     window.addEventListener("config:updated", onConfigUpdated);
-    
+
     return () => {
       window.removeEventListener("auth:error", onAuthError);
       window.removeEventListener("config:updated", onConfigUpdated);
@@ -80,7 +80,7 @@ export default function App() {
   // AUTO-LOGOUT LOGIC
   useEffect(() => {
     if (!authed) return;
-    
+
     let timer;
     const resetTimer = () => {
       clearTimeout(timer);

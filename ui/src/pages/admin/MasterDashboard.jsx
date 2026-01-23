@@ -61,7 +61,7 @@ export default function MasterDashboard() {
                 {tab === "masters" && <MastersManager />}
                 {tab === "learning" && <SuggestionsReview />}
                 {tab === "audit" && <AuditLogViewer />}
-                {tab === "audit" && <AuditLogViewer />}
+
                 {tab === "stations" && <StationConfig />}
                 {tab === "plc" && <PLCConfiguration />}
             </div>

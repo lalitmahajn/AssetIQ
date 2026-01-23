@@ -105,10 +105,29 @@ def get_efficiency_by_asset(days: int = 7, user=Depends(require_perm("stops.view
             upt_min = max(0, total_minutes - dt_min)
             eff = round((upt_min / total_minutes) * 100, 1) if total_minutes > 0 else 100.0
 
+            # MTTR/MTTF/MTBF Calculation
+            # "Failures" = number of distinct downtime events (merged intervals)
+            stop_count = len(final_intervals)
+
+            if stop_count > 0:
+                mttr_min = dt_min / stop_count
+                mttf_min = upt_min / stop_count
+                mtbf_min = total_minutes / stop_count
+            else:
+                mttr_min = 0.0
+                mttf_min = float(
+                    total_minutes
+                )  # No failures = infinite really, but bounded by window
+                mtbf_min = float(total_minutes)
+
             stats = {
                 "efficiency_pct": eff,
                 "downtime_minutes": dt_min,
                 "uptime_minutes": upt_min,
+                "mttr_minutes": mttr_min,
+                "mttf_minutes": mttf_min,
+                "mtbf_minutes": mtbf_min,
+                "stop_count": stop_count,
             }
             computed_stats[asset_id] = stats
 
@@ -134,6 +153,10 @@ def get_efficiency_by_asset(days: int = 7, user=Depends(require_perm("stops.view
                     "efficiency_pct": stats["efficiency_pct"],
                     "downtime_minutes": stats["downtime_minutes"],
                     "uptime_minutes": stats["uptime_minutes"],
+                    "mttr_minutes": stats["mttr_minutes"],
+                    "mttf_minutes": stats["mttf_minutes"],
+                    "mtbf_minutes": stats["mtbf_minutes"],
+                    "stop_count": stats["stop_count"],
                     "level": level,
                     "is_parent": bool(children_map.get(asset_id)),
                     "is_critical": asset_obj.is_critical,
