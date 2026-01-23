@@ -64,20 +64,32 @@ cd docker/hq
 docker compose -f docker-compose.hq.yml up -d --build
 ```
 
-## 4. Applying Database Schema
-On a new PC, you must run migrations for **both** Plant and HQ databases to create the tables.
+## 4. Windows Firewall Configuration (Critical for Live Access)
+To access the UI and API from other devices on the same network, you must allow traffic through the Windows Firewall. Run this in **PowerShell as Administrator**:
+
+```powershell
+# Plant Ports
+New-NetFirewallRule -DisplayName "AssetIQ Plant UI" -Direction Inbound -LocalPort 5173 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "AssetIQ Plant API" -Direction Inbound -LocalPort 8000 -Protocol TCP -Action Allow
+
+# HQ Ports
+New-NetFirewallRule -DisplayName "AssetIQ HQ Dashboard" -Direction Inbound -LocalPort 8100 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "AssetIQ HQ Proxy" -Direction Inbound -LocalPort 8081 -Protocol TCP -Action Allow
+```
+
+## 5. Applying Database Schema
+On a new PC, you **must** run migrations to create the database tables.
 
 ### Plant Database
-Run this command from the project root.
-**Note**: If you encounter an "already exists" error, run the *stamp* command first, then upgrade.
-
+Run this from the project root:
 ```bash
-# Option 1: Standard Upgrade (Try this first)
 docker exec plant-plant_backend-1 alembic upgrade head
+```
 
-# Option 2: If Option 1 fails with "Table 'assets' already exists":
-docker exec plant-plant_backend-1 alembic stamp 6d85ac6521e8
-docker exec plant-plant_backend-1 alembic upgrade head
+### HQ Database
+Run this from the project root:
+```bash
+docker exec hq-hq_backend-1 sh -c "export DATABASE_URL=\$HQ_DB_URL && export MIGRATION_TARGET=hq && alembic upgrade head"
 ```
 
 ### HQ Database

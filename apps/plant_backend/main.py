@@ -162,13 +162,18 @@ def startup() -> None:
     configure_logging(component="plant_backend")
     validate_runtime_secrets()
 
-    # Ensure tables exist (Alembic is preferred, but this handles new tables in this environment)
-    from common_core.db import Base, plant_engine
+    # NOTE: We no longer call Base.metadata.create_all(bind=plant_engine) here.
+    # Schema initialization must be handled exclusively via Alembic migrations.
+    # This prevents "Table already exists" errors during first-time setup.
 
-    Base.metadata.create_all(bind=plant_engine)
-
-    _bootstrap_admin_if_env_present()
-    _bootstrap_masters()
+    try:
+        _bootstrap_admin_if_env_present()
+        _bootstrap_masters()
+    except Exception as e:
+        # Tables might not exist yet if alembic hasn't run.
+        # We log and continue so the app can start (healthz will pass),
+        # allowing the user to run migrations via docker exec.
+        log.warning("bootstrap_skipped_or_failed", extra={"error": str(e)})
 
     # Start PLC Polling Background Thread
     try:
