@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useState } from "react";
+import { Routes, Route, Navigate, NavLink, useLocation, useNavigate } from "react-router-dom";
 import { apiGet, getToken, parseJwt } from "./api";
 import Login from "./pages/Login";
+import ProtectedRoute from "./components/ProtectedRoute";
 
 // Lazy load heavy page components
 const Assets = lazy(() => import("./pages/Assets"));
@@ -13,12 +15,13 @@ const StopPopup = lazy(() => import("./pages/StopPopup"));
 
 export default function App() {
   const [authed, setAuthed] = useState(!!getToken());
-  const [tab, setTab] = useState(() => localStorage.getItem("activeTab") || "stops");
-  const [config, setConfig] = useState({ stopQueueVisible: true, autoLogoutMinutes: 30 });
-
-  useEffect(() => {
-    localStorage.setItem("activeTab", tab);
-  }, [tab]);
+  const [config, setConfig] = useState({
+    plantName: "Loading...",
+    stopQueueVisible: true,
+    autoLogoutMinutes: 30
+  });
+  const location = useLocation();
+  const navigate = useNavigate();
 
   // Derive roles from token for display
   const token = getToken();
@@ -33,16 +36,13 @@ export default function App() {
   function handleLogout() {
     localStorage.removeItem("token");
     setAuthed(false);
+    navigate("/login");
   }
 
   async function fetchConfig() {
     try {
       const data = await apiGet("/master/config");
-      setConfig(data);
-      // If we are on stops tab but it's now hidden, move to tickets
-      if (data.stopQueueVisible === false && tab === "stops") {
-        setTab("tickets");
-      }
+      setConfig(prev => ({ ...prev, ...data }));
     } catch (e) {
       console.error("Failed to fetch config", e);
     }
@@ -52,8 +52,9 @@ export default function App() {
     async function fetchSiteCode() {
       try {
         const data = await apiGet("/readyz");
-        if (data && data.site_code) {
-          document.title = `AssetIQ - ${data.site_code}`;
+        if (data && data.plant_display_name) {
+          document.title = `${data.plant_display_name} | AssetIQ`;
+          setConfig(prev => ({ ...prev, plantName: data.plant_display_name }));
         }
       } catch (e) {
         console.error("Failed to fetch site code", e);
@@ -101,52 +102,51 @@ export default function App() {
     };
   }, [authed, config.autoLogoutMinutes]);
 
-  if (!authed) return <Login onLoggedIn={() => setAuthed(true)} />;
+  const navItemClass = ({ isActive }) =>
+    `rounded-md px-3 py-1 text-sm font-medium transition-colors ${isActive ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`;
+
+  const navReportClass = ({ isActive }) =>
+    `rounded-md px-3 py-1 text-sm font-medium transition-colors ${isActive ? "bg-green-100 text-green-700" : "text-gray-600 hover:bg-gray-100"}`;
+
+  const navAdminClass = ({ isActive }) =>
+    `rounded-md px-3 py-1 text-sm font-medium transition-colors ${isActive ? "bg-purple-100 text-purple-700" : "text-gray-600 hover:bg-gray-100"}`;
+
+  // If not authed and not on login page, redirect to login
+  if (location.pathname === "/login") {
+    if (authed) return <Navigate to="/" replace />;
+    return <Login onLoggedIn={() => setAuthed(true)} />;
+  }
+
+  // Layout for authenticated users
   return (
     <div className="min-h-screen bg-gray-50 font-sans text-gray-900">
       <div className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3 shadow-sm">
         <div className="flex items-center">
-          <h1 className="mr-8 text-lg font-bold text-blue-600">AssetIQ</h1>
+          <div className="mr-8 flex flex-col">
+            <h1 className="text-lg font-black text-blue-600 leading-none">AssetIQ</h1>
+            <span className="text-[10px] font-bold text-gray-400 uppercase tracking-tighter">{config.plantName || "Plant"}</span>
+          </div>
           <div className="flex space-x-4">
             {config.stopQueueVisible !== false && (
-              <button
-                onClick={() => setTab("stops")}
-                className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${tab === "stops" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-              >
+              <NavLink to="/stops" className={navItemClass}>
                 Stop Queue
-              </button>
+              </NavLink>
             )}
-            <button
-              onClick={() => setTab("tickets")}
-              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${tab === "tickets" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-            >
+            <NavLink to="/tickets" className={navItemClass}>
               Tickets
-            </button>
-            <button
-              onClick={() => setTab("reports")}
-              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${tab === "reports" ? "bg-green-100 text-green-700" : "text-gray-600 hover:bg-gray-100"}`}
-            >
+            </NavLink>
+            <NavLink to="/reports" className={navReportClass}>
               Reports
-            </button>
-            <button
-              onClick={() => setTab("assets")}
-              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${tab === "assets" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-            >
+            </NavLink>
+            <NavLink to="/assets" className={navItemClass}>
               Assets
-            </button>
-            <button
-              onClick={() => setTab("insights")}
-              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${tab === "insights" ? "bg-blue-100 text-blue-700" : "text-gray-600 hover:bg-gray-100"}`}
-            >
+            </NavLink>
+            <NavLink to="/insights" className={navItemClass}>
               Insights
-            </button>
-            {/* PLC Config moved to Admin Dashboard */}
-            <button
-              onClick={() => setTab("admin")}
-              className={`rounded-md px-3 py-1 text-sm font-medium transition-colors ${tab === "admin" ? "bg-purple-100 text-purple-700" : "text-gray-600 hover:bg-gray-100"}`}
-            >
+            </NavLink>
+            <NavLink to="/admin" className={navAdminClass}>
               Admin
-            </button>
+            </NavLink>
           </div>
         </div>
         <div className="flex items-center gap-4">
@@ -166,14 +166,39 @@ export default function App() {
 
       <div className="p-4">
         <Suspense fallback={<div className="p-20 text-center text-gray-400">Loading module...</div>}>
-          {tab === "stops" && <StopQueue />}
-          {tab === "tickets" && <Tickets />}
-          {tab === "reports" && <Reports />}
-          {tab === "assets" && <Assets />}
-          {tab === "insights" && <Insights />}
-          {tab === "admin" && <MasterDashboard />}
+          <Routes>
+            <Route path="/" element={<Navigate to="/stops" replace />} />
+
+            <Route path="/stops" element={
+              <ProtectedRoute><StopQueue /></ProtectedRoute>
+            } />
+
+            <Route path="/tickets" element={
+              <ProtectedRoute><Tickets plantName={config.plantName} /></ProtectedRoute>
+            } />
+
+            <Route path="/reports" element={
+              <ProtectedRoute><Reports /></ProtectedRoute>
+            } />
+
+            <Route path="/assets" element={
+              <ProtectedRoute><Assets /></ProtectedRoute>
+            } />
+
+            <Route path="/insights" element={
+              <ProtectedRoute><Insights plantName={config.plantName} /></ProtectedRoute>
+            } />
+
+            <Route path="/admin/*" element={
+              <ProtectedRoute><MasterDashboard /></ProtectedRoute>
+            } />
+
+            {/* Fallback */}
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
         </Suspense>
       </div>
+
       <Suspense fallback={null}>
         <StopPopup />
       </Suspense>

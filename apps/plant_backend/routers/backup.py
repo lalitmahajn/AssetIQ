@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import os
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -94,16 +94,12 @@ def trigger_backup(user=Depends(require_perm("master.manage"))):
         if not success:
             raise HTTPException(status_code=500, detail="Backup job returned failure")
         return {"status": "ok", "message": "Backup completed successfully"}
-    except ImportError:
+    except ImportError as e:
         # Fallback if worker package is not importable (should be fine as they share volume mapping of code?)
         # Docker map: `../../:/app`. So `apps.plant_worker` exists.
         # But `postgresql-client` might be missing on backend container.
         raise HTTPException(
             status_code=500, detail="Configuration Error: Backend cannot execute backup logic."
-        )
+        ) from e
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-# Import needed for file listing
-from datetime import datetime
+        raise HTTPException(status_code=500, detail=str(e)) from e

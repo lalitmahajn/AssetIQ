@@ -119,12 +119,17 @@ def compare_downtime(
     day = (day_utc or _today_utc())[:10]
     db = HQSessionLocal()
     try:
+        # Join with PlantRegistry to get display_name
         rows = db.execute(
-            select(RollupDaily.site_code, RollupDaily.downtime_minutes)
+            select(RollupDaily.site_code, RollupDaily.downtime_minutes, PlantRegistry.display_name)
+            .join(PlantRegistry, RollupDaily.site_code == PlantRegistry.site_code)
             .where(RollupDaily.day_utc == day)
             .order_by(desc(RollupDaily.downtime_minutes))
         ).all()
-        items = [{"site_code": r[0], "downtime_minutes": int(r[1] or 0)} for r in rows]
+        items = [
+            {"site_code": r[0], "downtime_minutes": int(r[1] or 0), "display_name": r[2] or r[0]}
+            for r in rows
+        ]
         return {"day_utc": day, "items": items}
     finally:
         db.close()
@@ -137,12 +142,17 @@ def rank_sla(
     day = (day_utc or _today_utc())[:10]
     db = HQSessionLocal()
     try:
+        # Join with PlantRegistry to get display_name
         rows = db.execute(
-            select(RollupDaily.site_code, RollupDaily.sla_breaches)
+            select(RollupDaily.site_code, RollupDaily.sla_breaches, PlantRegistry.display_name)
+            .join(PlantRegistry, RollupDaily.site_code == PlantRegistry.site_code)
             .where(RollupDaily.day_utc == day)
             .order_by(desc(RollupDaily.sla_breaches))
         ).all()
-        items = [{"site_code": r[0], "sla_breaches": int(r[1] or 0)} for r in rows]
+        items = [
+            {"site_code": r[0], "sla_breaches": int(r[1] or 0), "display_name": r[2] or r[0]}
+            for r in rows
+        ]
         return {"day_utc": day, "items": items}
     finally:
         db.close()
@@ -162,16 +172,19 @@ def top_reasons(
                 StopReasonDaily.reason_code,
                 StopReasonDaily.stops,
                 StopReasonDaily.downtime_minutes,
+                PlantRegistry.display_name,
             )
+            .join(PlantRegistry, StopReasonDaily.site_code == PlantRegistry.site_code)
             .where(StopReasonDaily.day_utc == day)
             .order_by(desc(StopReasonDaily.downtime_minutes))
         ).all()
         # group
         grouped: dict[str, list[dict[str, Any]]] = {}
-        for site_code, reason_code, stops, dtm in rows:
-            grouped.setdefault(site_code, [])
-            if len(grouped[site_code]) < limit:
-                grouped[site_code].append(
+        for site_code, reason_code, stops, dtm, display_name in rows:
+            label = display_name or site_code
+            grouped.setdefault(label, [])
+            if len(grouped[label]) < limit:
+                grouped[label].append(
                     {
                         "reason_code": reason_code,
                         "stops": int(stops or 0),
@@ -192,21 +205,19 @@ def insights(
     try:
         from apps.hq_backend.models import InsightDaily
 
-        rows = (
-            db.execute(
-                select(InsightDaily)
-                .where(InsightDaily.day_utc == day)
-                .order_by(desc(InsightDaily.severity), InsightDaily.id)
-            )
-            .scalars()
-            .all()
-        )
+        rows = db.execute(
+            select(InsightDaily, PlantRegistry.display_name)
+            .outerjoin(PlantRegistry, InsightDaily.site_code == PlantRegistry.site_code)
+            .where(InsightDaily.day_utc == day)
+            .order_by(desc(InsightDaily.severity), InsightDaily.id)
+        ).all()
 
         items = []
-        for r in rows:
+        for r, display_name in rows:
             items.append(
                 {
                     "site_code": r.site_code or "GLOBAL",
+                    "display_name": display_name or r.site_code or "GLOBAL",
                     "type": r.insight_type,
                     "title": r.title,
                     "severity": r.severity,
@@ -548,9 +559,9 @@ async function loadAll(){
     // Overview
     const sum = await api('/hq/summary');
     const ovRows = sum.items.map(it => [
-      `<span style="font-weight:600">${esc(it.site_code)}</span>`,
+      `<span style="font-weight:600">${esc(it.display_name || it.site_code)}</span>`,
       `<span class="pill ${it.status}">${it.status}</span>`,
-      it.update_at_utc ? `<span title="${esc(it.update_at_utc)}" style="cursor:help">Recently</span>` : '-',
+      it.updated_at_utc ? `<span title="${esc(it.updated_at_utc)}" style="cursor:help">Recently</span>` : '-',
       esc(it.downtime_minutes),
       esc(it.stops),
       esc(it.sla_breaches),
@@ -560,11 +571,11 @@ async function loadAll(){
 
     // Downtime Bars
     const dt = await api('/hq/compare/downtime');
-    renderBars("downtime", dt.items, "downtime_minutes", "site_code", "#eab308"); // yellow/orange
+    renderBars("downtime", dt.items, "downtime_minutes", "display_name", "#eab308"); // yellow/orange
 
     // SLA Bars
     const sla = await api('/hq/rank/sla');
-    renderBars("sla", sla.items, "sla_breaches", "site_code", "#ef4444"); // red
+    renderBars("sla", sla.items, "sla_breaches", "display_name", "#ef4444"); // red
 
     // Reasons
     const rs = await api('/hq/top-reasons?limit=5');
@@ -605,7 +616,7 @@ async function loadAll(){
     } else {
         const insRows = ins.items.map(it => [
              `<span class="pill" style="background:${it.severity==='HIGH'?'#7f1d1d':(it.severity==='MEDIUM'?'#7c4a00':'#1f2937')};color:${it.severity==='HIGH'?'#fca5a5':(it.severity==='MEDIUM'?'#fde047':'#9ca3af')}">${it.severity}</span>`,
-             `<span style="font-weight:600">${esc(it.site_code)}</span>`,
+             `<span style="font-weight:600">${esc(it.display_name || it.site_code)}</span>`,
              esc(it.title),
              `<span style="font-size:12px;color:var(--muted)">${esc(it.detail?.note || '')}</span>`
         ]);

@@ -81,7 +81,7 @@ function StatusBadge({ s }) {
 
 /* --- MAIN COMPONENT --- */
 
-export default function Tickets() {
+export default function Tickets({ plantName }) {
   const [view, setView] = useState("LIST"); // LIST | DETAIL | HISTORY | CLOSED_LIST
   const [selectedTicketId, setSelectedTicketId] = useState(null);
   const [selectedAssetId, setSelectedAssetId] = useState(null);

@@ -9,7 +9,7 @@ function severityRank(s) {
   return 1;
 }
 
-export default function Insights() {
+export default function Insights({ plantName }) {
   const [data, setData] = useState(null);
   const [err, setErr] = useState("");
   const [dismissed, setDismissed] = useState({});
@@ -122,8 +122,11 @@ export default function Insights() {
                       </div>
 
                       <div className="flex items-center justify-between mt-4 border-t border-gray-100 pt-3">
-                        <span className="text-xs text-gray-400 font-mono">
-                          {x.site_code} • {x.detail?.window_days || 14}d Window
+                        <span className="text-[10px] font-black text-blue-600/40 uppercase tracking-tighter">
+                          {plantName || x.site_code}
+                        </span>
+                        <span className="text-[10px] text-gray-400 font-mono italic">
+                          {x.detail?.window_days || 14}d Window
                         </span>
                         <button
                           onClick={() => setSelectedInsight(x)}
@@ -178,8 +181,8 @@ export default function Insights() {
                       selectedInsight.severity === 'MEDIUM' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-blue-100 text-blue-700 border-blue-200'}`}>
                     {selectedInsight.severity} PRIORITY
                   </span>
-                  <span className="text-xs text-gray-400 font-mono">
-                    {selectedInsight.site_code}
+                  <span className="text-[10px] font-black text-blue-600 uppercase tracking-tighter">
+                    {plantName || selectedInsight.site_code}
                   </span>
                 </div>
                 <h3 className="text-xl font-bold text-gray-900 leading-tight pr-4">

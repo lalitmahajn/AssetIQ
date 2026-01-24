@@ -75,7 +75,10 @@ async def receive(request: Request) -> Dict[str, Any]:
                 continue
 
             try:
-                validate_entity(item.entity_type, {**item.payload, "site_code": item.site_code, "entity_id": item.entity_id})
+                validate_entity(
+                    item.entity_type,
+                    {**item.payload, "site_code": item.site_code, "entity_id": item.entity_id},
+                )
             except Exception as e:
                 _dead_letter(db, item, now, f"schema_invalid: {str(e)[:200]}")
                 failed += 1
@@ -90,6 +93,8 @@ async def receive(request: Request) -> Dict[str, Any]:
                     _apply_ticket(db, item, now)
                 elif item.entity_type == "timeline_event":
                     _apply_timeline_event(db, item, now)
+                elif item.entity_type == "plant_metadata":
+                    _apply_plant_metadata(db, item, now)
                 else:
                     # Unknown types are not applied in Phase-2 (visibility only)
                     pass
@@ -155,7 +160,9 @@ def _apply_rollup(db, item: SyncItem, now: datetime) -> None:
     if not day_utc:
         raise ValueError("missing day_utc")
     existing = db.execute(
-        select(RollupDaily).where(RollupDaily.site_code == item.site_code, RollupDaily.day_utc == day_utc)
+        select(RollupDaily).where(
+            RollupDaily.site_code == item.site_code, RollupDaily.day_utc == day_utc
+        )
     ).scalar_one_or_none()
     if existing is None:
         db.add(
@@ -177,13 +184,17 @@ def _apply_rollup(db, item: SyncItem, now: datetime) -> None:
         existing.sla_breaches = int(p.get("sla_breaches", existing.sla_breaches or 0))
         existing.downtime_minutes = int(p.get("downtime_minutes", existing.downtime_minutes or 0))
         existing.updated_at_utc = now
-        
+
     # Process Stop Reasons (Nested List)
     stop_reasons = p.get("stop_reasons", [])
-    print(f"DEBUG: Processing rollup. Site={item.site_code} Day={day_utc} ReasonsCount={len(stop_reasons)} PayloadReasons={stop_reasons}", flush=True)
-    
+    print(
+        f"DEBUG: Processing rollup. Site={item.site_code} Day={day_utc} ReasonsCount={len(stop_reasons)} PayloadReasons={stop_reasons}",
+        flush=True,
+    )
+
     if stop_reasons and isinstance(stop_reasons, list):
         from apps.hq_backend.models import StopReasonDaily
+
         for sr in stop_reasons:
             reason_code = str(sr.get("reason_code", "UNKNOWN"))[:64]
             # Upsert StopReasonDaily
@@ -192,29 +203,32 @@ def _apply_rollup(db, item: SyncItem, now: datetime) -> None:
                 select(StopReasonDaily).where(
                     StopReasonDaily.site_code == item.site_code,
                     StopReasonDaily.day_utc == day_utc,
-                    StopReasonDaily.reason_code == reason_code
+                    StopReasonDaily.reason_code == reason_code,
                 )
             ).scalar_one_or_none()
-            
+
             if sr_existing is None:
-                db.add(StopReasonDaily(
-                    site_code=item.site_code,
-                    day_utc=day_utc,
-                    reason_code=reason_code,
-                    stops=int(sr.get("stops", 0)),
-                    downtime_minutes=int(sr.get("downtime_minutes", 0))
-                ))
+                db.add(
+                    StopReasonDaily(
+                        site_code=item.site_code,
+                        day_utc=day_utc,
+                        reason_code=reason_code,
+                        stops=int(sr.get("stops", 0)),
+                        downtime_minutes=int(sr.get("downtime_minutes", 0)),
+                    )
+                )
             else:
                 sr_existing.stops = int(sr.get("stops", 0))
                 sr_existing.downtime_minutes = int(sr.get("downtime_minutes", 0))
-
 
 
 def _apply_ticket(db, item: SyncItem, now: datetime) -> None:
     p = item.payload
     ticket_id = item.entity_id
     existing = db.execute(
-        select(TicketSnapshot).where(TicketSnapshot.site_code == item.site_code, TicketSnapshot.ticket_id == ticket_id)
+        select(TicketSnapshot).where(
+            TicketSnapshot.site_code == item.site_code, TicketSnapshot.ticket_id == ticket_id
+        )
     ).scalar_one_or_none()
 
     def _dt(v: Optional[str]) -> Optional[datetime]:
@@ -247,7 +261,9 @@ def _apply_ticket(db, item: SyncItem, now: datetime) -> None:
         existing.status = str(p.get("status", existing.status))[:32]
         existing.priority = str(p.get("priority", existing.priority))[:32]
         existing.sla_due_at_utc = _dt(p.get("sla_due_at_utc")) or existing.sla_due_at_utc
-        existing.acknowledged_at_utc = _dt(p.get("acknowledged_at_utc")) or existing.acknowledged_at_utc
+        existing.acknowledged_at_utc = (
+            _dt(p.get("acknowledged_at_utc")) or existing.acknowledged_at_utc
+        )
         existing.resolved_at_utc = _dt(p.get("resolved_at_utc")) or existing.resolved_at_utc
         existing.updated_at_utc = now
 
@@ -265,7 +281,9 @@ def _apply_timeline_event(db, item: SyncItem, now: datetime) -> None:
             return now
 
     existing = db.execute(
-        select(TimelineEventHQ).where(TimelineEventHQ.site_code == item.site_code, TimelineEventHQ.event_id == event_id)
+        select(TimelineEventHQ).where(
+            TimelineEventHQ.site_code == item.site_code, TimelineEventHQ.event_id == event_id
+        )
     ).scalar_one_or_none()
 
     if existing is None:
@@ -276,7 +294,9 @@ def _apply_timeline_event(db, item: SyncItem, now: datetime) -> None:
                 event_type=str(p.get("event_type", ""))[:32],
                 occurred_at_utc=_dt(p.get("occurred_at_utc")),
                 asset_id=(str(p.get("asset_id"))[:128] if p.get("asset_id") is not None else None),
-                reason_code=(str(p.get("reason_code"))[:64] if p.get("reason_code") is not None else None),
+                reason_code=(
+                    str(p.get("reason_code"))[:64] if p.get("reason_code") is not None else None
+                ),
                 duration_seconds=int(p.get("duration_seconds", 0) or 0),
                 payload_json=p,
             )
@@ -289,3 +309,28 @@ def _apply_timeline_event(db, item: SyncItem, now: datetime) -> None:
             existing.asset_id = str(p.get("asset_id"))[:128]
         if not existing.duration_seconds and p.get("duration_seconds"):
             existing.duration_seconds = int(p.get("duration_seconds") or 0)
+
+
+def _apply_plant_metadata(db, item: SyncItem, now: datetime) -> None:
+    p = item.payload
+    plant = db.get(PlantRegistry, item.site_code)
+    display_name = p.get("display_name")
+
+    if not display_name:
+        return
+
+    if plant is None:
+        db.add(
+            PlantRegistry(
+                site_code=item.site_code,
+                display_name=display_name,
+                is_active=True,
+                last_seen_at_utc=now,
+                created_at_utc=now,
+                updated_at_utc=now,
+            )
+        )
+    else:
+        plant.display_name = display_name
+        plant.last_seen_at_utc = now
+        plant.updated_at_utc = now

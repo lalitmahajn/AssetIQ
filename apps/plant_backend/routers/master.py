@@ -1,5 +1,4 @@
-from __future__ import annotations
-
+import uuid
 from datetime import datetime, timedelta
 from typing import Annotated, Any
 
@@ -7,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
 from sqlalchemy import desc, select
 
-from apps.plant_backend.models import Asset, AuditLog, ReasonSuggestion, User
+from apps.plant_backend.models import Asset, AuditLog, ReasonSuggestion, User, EventOutbox
 from apps.plant_backend.security_deps import require_roles
 from common_core.config import settings
 from common_core.db import PlantSessionLocal
@@ -508,6 +507,19 @@ def set_config(
 
             # Add to response for UI update
             updated_state[k] = v
+
+        # If plantName was updated, trigger sync to HQ
+        if "plantName" in updated_state:
+            db.add(
+                EventOutbox(
+                    site_code=settings.plant_site_code,
+                    entity_type="plant_metadata",
+                    entity_id=settings.plant_site_code,
+                    payload_json={"display_name": updated_state["plantName"]},
+                    correlation_id=f"meta_{uuid.uuid4().hex[:12]}",
+                    created_at_utc=now,
+                )
+            )
 
         db.commit()
         return {"status": "ok", "updated": updated_state}

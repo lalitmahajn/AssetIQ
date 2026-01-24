@@ -36,5 +36,11 @@ echo "Running Alembic migrations..."
 MIGRATION_TARGET=hq python -m alembic upgrade head || echo "Alembic migrations skipped or failed (tables may already exist)"
 
 # Step 3: Start the application
-echo "Starting HQ Backend..."
-exec uvicorn apps.hq_backend.main:app --host 0.0.0.0 --port 8100
+echo "Starting HQ Backend (APP_ENV=${APP_ENV:-prod})..."
+if [ "${APP_ENV:-prod}" = "dev" ] || [ "${APP_ENV:-prod}" = "development" ]; then
+    echo "Developer mode: enabling auto-reload"
+    exec uvicorn apps.hq_backend.main:app --host 0.0.0.0 --port 8100 --reload
+else
+    exec uvicorn apps.hq_backend.main:app --host 0.0.0.0 --port 8100
+fi
+

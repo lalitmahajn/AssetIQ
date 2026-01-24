@@ -6,9 +6,11 @@ REQUIRED_KEYS = {
     "timeline_event": {"site_code", "entity_id", "event_type", "occurred_at_utc"},
     "ticket": {"site_code", "entity_id", "asset_id", "status", "created_at_utc"},
     "rollup": {"site_code", "entity_id", "day_utc"},
+    "plant_metadata": {"site_code", "entity_id"},
 }
 
 OPTIONAL_KEYS = {
+    "plant_metadata": {"display_name"},
     "rollup": {"stops", "faults", "tickets_open", "sla_breaches", "downtime_minutes"},
     "ticket": {"title", "priority", "sla_due_at_utc", "acknowledged_at_utc", "resolved_at_utc"},
     "timeline_event": {"asset_id", "reason_code", "duration_seconds"},

@@ -1,11 +1,15 @@
-import React, { useState } from "react";
-import { apiPost, setToken, setRoles } from "../api";
+import React, { useState, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { apiGet, apiPost, setToken, setRoles } from "../api";
 
 export default function Login({ onLoggedIn }) {
   const [username, setUsername] = useState("");
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const navigate = useNavigate();
+  const location = useLocation();
 
   async function submit(e) {
     e.preventDefault();
@@ -16,6 +20,10 @@ export default function Login({ onLoggedIn }) {
       setToken(resp.token);
       setRoles(resp.roles);
       onLoggedIn();
+
+      // Redirect to the page they were trying to access, or to home
+      const from = location.state?.from?.pathname || "/";
+      navigate(from, { replace: true });
     } catch (e) {
       setErr(String(e?.message || e));
     } finally {
@@ -28,8 +36,9 @@ export default function Login({ onLoggedIn }) {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-2xl p-8">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-gray-800">AssetIQ</h1>
-            <p className="text-gray-500 mt-2">Sign in to your account</p>
+            <h1 className="text-3xl font-black text-blue-600">AssetIQ</h1>
+            <p className="text-gray-900 font-bold mt-1 text-lg uppercase tracking-tight">{plantName || "Plant Management"}</p>
+            <p className="text-gray-400 mt-2 text-sm italic border-t pt-2">Sign in to your account</p>
           </div>
 
           <form onSubmit={submit} className="space-y-6">

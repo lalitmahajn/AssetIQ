@@ -36,5 +36,11 @@ echo "Running Alembic migrations..."
 MIGRATION_TARGET=plant python -m alembic upgrade head || echo "Alembic migrations skipped or failed (tables may already exist)"
 
 # Step 3: Start the application
-echo "Starting Plant Backend..."
-exec uvicorn apps.plant_backend.main:app --host 0.0.0.0 --port 8000
+echo "Starting Plant Backend (APP_ENV=${APP_ENV:-prod})..."
+if [ "${APP_ENV:-prod}" = "dev" ] || [ "${APP_ENV:-prod}" = "development" ]; then
+    echo "Developer mode: enabling auto-reload"
+    exec uvicorn apps.plant_backend.main:app --host 0.0.0.0 --port 8000 --reload
+else
+    exec uvicorn apps.plant_backend.main:app --host 0.0.0.0 --port 8000
+fi
+

@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 
 from fastapi import APIRouter
-from sqlalchemy import text
+from sqlalchemy import text, select
+from apps.plant_backend.models import SystemConfig
 
 from common_core.config import settings
 from common_core.db import PlantSessionLocal
@@ -33,7 +34,16 @@ def ready():
 
     with contextlib.suppress(OSError):
         os.remove(test_path)
-    return {"ok": True, "site_code": settings.plant_site_code}
+
+    # Fetch dynamic plant name
+    plant_name = f"Plant {settings.plant_site_code}"
+    row = db.execute(
+        select(SystemConfig).where(SystemConfig.config_key == "plantName")
+    ).scalar_one_or_none()
+    if row:
+        plant_name = row.config_value
+
+    return {"ok": True, "site_code": settings.plant_site_code, "plant_display_name": plant_name}
 
 
 @router.get("/healthz")
