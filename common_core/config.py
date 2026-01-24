@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     report_retention_days: int = Field(default=30, alias="REPORT_RETENTION_DAYS")
     report_max_files: int = Field(default=30, alias="REPORT_MAX_FILES")
 
+    # Maintenance & Retention
+    backup_retention_days: int = Field(default=0, alias="BACKUP_RETENTION_DAYS")  # 0 = Indefinite
+    log_retention_days: int = Field(default=90, alias="LOG_RETENTION_DAYS")
+    ticket_retention_days: int = Field(default=365, alias="TICKET_RETENTION_DAYS")
+    queue_retention_days: int = Field(default=7, alias="QUEUE_RETENTION_DAYS")
+
     # Phase-3 Intelligence (HQ add-on)
     enable_intelligence: bool = Field(default=False, alias="ENABLE_INTELLIGENCE")
     intelligence_window_days: int = Field(default=14, alias="INTELLIGENCE_WINDOW_DAYS")

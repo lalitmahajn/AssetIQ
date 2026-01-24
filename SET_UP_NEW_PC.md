@@ -52,16 +52,15 @@ docker network create assetiq_net
 
 Open a terminal in the project root and run:
 
-### Start Plant
+### Start Plant (Everything is Automated!)
 ```bash
-cd docker/plant
-docker compose -f docker-compose.plant.yml up -d --build
+docker-compose -f docker/plant/docker-compose.plant.yml up -d --build
 ```
+> **Note**: This automatically creates the database, initializes all 20+ tables, and applies migrations. No manual steps required.
 
 ### Start HQ
 ```bash
-cd docker/hq
-docker compose -f docker-compose.hq.yml up -d --build
+docker-compose -f docker/hq/docker-compose.hq.yml up -d --build
 ```
 
 ## 4. Windows Firewall Configuration (Critical for Live Access)
@@ -75,27 +74,6 @@ New-NetFirewallRule -DisplayName "AssetIQ Plant API" -Direction Inbound -LocalPo
 # HQ Ports
 New-NetFirewallRule -DisplayName "AssetIQ HQ Dashboard" -Direction Inbound -LocalPort 8100 -Protocol TCP -Action Allow
 New-NetFirewallRule -DisplayName "AssetIQ HQ Proxy" -Direction Inbound -LocalPort 8081 -Protocol TCP -Action Allow
-```
-
-## 5. Applying Database Schema
-On a new PC, you **must** run migrations to create the database tables.
-
-### Plant Database
-Run this from the project root:
-```bash
-docker exec plant-plant_backend-1 alembic upgrade head
-```
-
-### HQ Database
-Run this from the project root:
-```bash
-docker exec hq-hq_backend-1 sh -c "export DATABASE_URL=\$HQ_DB_URL && export MIGRATION_TARGET=hq && alembic upgrade head"
-```
-
-### HQ Database
-Run this command to create the HQ-specific tables:
-```bash
-docker exec hq-hq_backend-1 sh -c "export DATABASE_URL=\$HQ_DB_URL && export MIGRATION_TARGET=hq && alembic upgrade head"
 ```
 
 ## 5. First-Time Access

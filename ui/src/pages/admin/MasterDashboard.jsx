@@ -7,6 +7,7 @@ import MastersManager from "./MastersManager";
 import StationConfig from "./StationConfig";
 import SuggestionsReview from "./SuggestionsReview";
 import UserList from "./UserList";
+import Backups from "./Backups";
 
 export default function MasterDashboard() {
     const roles = getRoles();
@@ -20,6 +21,7 @@ export default function MasterDashboard() {
         { id: "masters", label: "Dynamic Masters", allowed: isAdmin || isSupervisor },
         { id: "learning", label: "Self-Learning", allowed: isAdmin || isSupervisor },
         { id: "audit", label: "Audit Logs", allowed: isAdmin },
+        { id: "backups", label: "Data Backups", allowed: isAdmin },
         { id: "stations", label: "Station Config", allowed: isAdmin },
         { id: "plc", label: "PLC Configuration", allowed: isAdmin },
     ];
@@ -61,6 +63,7 @@ export default function MasterDashboard() {
                 {tab === "masters" && <MastersManager />}
                 {tab === "learning" && <SuggestionsReview />}
                 {tab === "audit" && <AuditLogViewer />}
+                {tab === "backups" && <Backups />}
 
                 {tab === "stations" && <StationConfig />}
                 {tab === "plc" && <PLCConfiguration />}

@@ -1,6 +1,7 @@
 FROM python:3.11-slim
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
+RUN apt-get update && apt-get install -y postgresql-client && rm -rf /var/lib/apt/lists/*
 RUN pip install --no-cache-dir --retries 5 --timeout 60 -r /app/requirements.txt
 COPY common_core /app/common_core
 COPY apps /app/apps

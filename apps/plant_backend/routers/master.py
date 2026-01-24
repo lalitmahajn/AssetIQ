@@ -475,6 +475,7 @@ def set_config(
         for k, v in payload.items():
             # Only allow specific keys
             if k not in [
+                "plantName",
                 "stopQueueVisible",
                 "autoLogoutMinutes",
                 "whatsappEnabled",

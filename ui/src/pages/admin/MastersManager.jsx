@@ -31,6 +31,26 @@ export default function MastersManager() {
         }
     }
 
+    async function handleAddOption() {
+        if (!selectedType) return;
+        const name = prompt("Enter new option name:");
+        if (!name) return;
+
+        const code = prompt("Enter unique code (or leave to auto-generate):", name.toUpperCase().replace(/\s+/g, "_"));
+        if (!code) return;
+
+        try {
+            await apiPost("/masters-dynamic/items/create", {
+                type_code: selectedType,
+                item_code: code,
+                item_name: name
+            });
+            loadItems();
+        } catch (err) {
+            alert("Error creating item: " + err.message);
+        }
+    }
+
     return (
         <div className="max-w-4xl mx-auto">
             <div className="mb-8">
@@ -57,7 +77,12 @@ export default function MastersManager() {
                 <div className="md:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
                     <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
                         <h3 className="text-sm font-bold text-gray-700">Options for: <span className="text-blue-600 font-mono">{selectedType}</span></h3>
-                        <button className="text-xs text-blue-600 font-semibold hover:underline">+ Add Option</button>
+                        <button
+                            onClick={handleAddOption}
+                            className="text-xs text-blue-600 font-semibold hover:underline"
+                        >
+                            + Add Option
+                        </button>
                     </div>
                     <div className="divide-y divide-gray-100 min-h-[300px]">
                         {loading ? (

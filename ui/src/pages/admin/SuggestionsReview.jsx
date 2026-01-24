@@ -12,7 +12,7 @@ export default function SuggestionsReview() {
     async function loadSuggestions() {
         setLoading(true);
         try {
-            const res = await apiGet("/suggestions/list?status=auto_promoted");
+            const res = await apiGet("/suggestions/list?status=pending");
             setSuggestions(res || []);
         } finally {
             setLoading(false);

@@ -91,6 +91,7 @@ export default function StationConfig() {
         }
         try {
             const res = await apiPost("/master/config", {
+                plantName: config.plantName,
                 stopQueueVisible: config.stopQueueVisible,
                 autoLogoutMinutes: minutes,
                 whatsappEnabled: config.whatsappEnabled,
@@ -244,7 +245,7 @@ export default function StationConfig() {
                     <input
                         className="mt-1 block w-full border border-gray-300 rounded-md shadow-sm p-2 bg-gray-100"
                         value={config.plantName}
-                        readOnly
+                        onChange={e => handleChange('plantName', e.target.value)}
                     />
                 </div>
 

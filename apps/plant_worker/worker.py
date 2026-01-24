@@ -2,9 +2,15 @@ from __future__ import annotations
 
 import logging
 import time
+from datetime import datetime, timedelta, date
 
 from apps.plant_worker.critical_alerts import send_critical_alert
 from apps.plant_worker.email_sender import send_pending
+from apps.plant_worker.maintenance_agent import (
+    check_startup_backup,
+    run_backup_job as run_maintenance_backup,
+    run_cleanup_job as run_maintenance_cleanup,
+)
 from apps.plant_worker.report_archiver import run_once as archive_once
 from apps.plant_worker.report_scheduler import run_once as check_reports_once
 from apps.plant_worker.rollup_agent import compute_rollup_once
@@ -19,6 +25,13 @@ def main() -> None:
     configure_logging(component="plant_worker")
     validate_runtime_secrets()
     log.info("worker_started", extra={"component": "plant_worker"})
+
+    # Startup Recovery
+    try:
+        check_startup_backup()
+    except Exception as e:
+        log.error("startup_backup_check_failed", extra={"err": str(e)})
+
     last_archive = 0.0
 
     email_fail_streak = 0
@@ -27,6 +40,21 @@ def main() -> None:
     last_rollup = 0.0
     last_report_check = 0.0
     last_sla_check = 0.0
+
+    # Track days to avoid running multiple times per hour
+    # We initialize to yesterday so it runs today if the hour matches immediately
+    # We initialize to yesterday so it runs today if the hour matches immediately
+
+    last_backup_date = date.today() - timedelta(days=1)
+    last_cleanup_date = date.today() - timedelta(days=1)
+
+    # But if we just started, we rely on check_startup_backup for the immediate backup.
+    # The scheduler handles the NEXT recurrence (tomorrow 2am).
+    # Actually, if we start at 02:30 AM, 'last_backup_date' logic above would trigger it instantly?
+    # No, condition is `hour == 2`. If started at 02:30, it runs. If 08:00, checks hour 8 != 2.
+    # To prevent double run if startup check already ran:
+    last_backup_date = date.today()  # Assume handled for today by startup check or skipped
+    last_cleanup_date = date.today()
 
     while True:
         try:
@@ -78,6 +106,27 @@ def main() -> None:
             except Exception as e:
                 log.error("report_archive_failed", extra={"err": str(e)})
                 send_critical_alert("plant_worker_archive_fail", str(e))
+
+        # -------------------------------
+        # Maintenance Scheduler (Daily)
+        # -------------------------------
+        current_dt = datetime.now()
+
+        # 1. Daily Backup (02:00 AM)
+        if current_dt.hour == 2 and last_backup_date != current_dt.date():
+            try:
+                run_maintenance_backup()
+                last_backup_date = current_dt.date()
+            except Exception as e:
+                log.error("scheduled_backup_failed", extra={"err": str(e)})
+
+        # 2. Daily Cleanup (03:00 AM)
+        if current_dt.hour == 3 and last_cleanup_date != current_dt.date():
+            try:
+                run_maintenance_cleanup()
+                last_cleanup_date = current_dt.date()
+            except Exception as e:
+                log.error("scheduled_cleanup_failed", extra={"err": str(e)})
 
         # Check for SLA warnings every 20 seconds
         now = time.time()

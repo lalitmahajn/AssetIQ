@@ -25,6 +25,7 @@ from apps.plant_backend.routers import (
     ui_tickets,
 )
 from apps.plant_backend.routers.auth import router as auth_router
+from apps.plant_backend.routers.backup import router as backup_router
 from apps.plant_backend.routers.bootstrap import router as bootstrap_router
 from apps.plant_backend.routers.health import router as health_router
 from apps.plant_backend.routers.ingest import router as ingest_router
@@ -78,6 +79,7 @@ app.include_router(assets.router)
 app.include_router(masters_dynamic.router)
 app.include_router(suggestions.router)
 app.include_router(efficiency.router)
+app.include_router(backup_router)
 
 
 def _is_weak_pin(pin: str) -> bool:

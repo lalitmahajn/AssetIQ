@@ -31,7 +31,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-prod}
       PLANT_SITE_CODE: ${PLANT_SITE_CODE:-P01}
-      PLANT_DB_URL: postgresql+psycopg2://${PLANT_POSTGRES_USER:-assetiq}:${PLANT_POSTGRES_PASSWORD}@plant-postgres-1:5432/${PLANT_POSTGRES_DB:-assetiq_plant}
+      PLANT_DB_URL: postgresql+psycopg2://${PLANT_POSTGRES_USER:-assetiq}:${PLANT_POSTGRES_PASSWORD}@postgres:5432/${PLANT_POSTGRES_DB:-assetiq_plant}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SYNC_HMAC_SECRET: ${SYNC_HMAC_SECRET:?set SYNC_HMAC_SECRET}
       STATION_SECRET_ENC_KEY: ${STATION_SECRET_ENC_KEY:?set STATION_SECRET_ENC_KEY}
@@ -69,7 +69,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-prod}
       PLANT_SITE_CODE: ${PLANT_SITE_CODE:-P01}
-      PLANT_DB_URL: postgresql+psycopg2://${PLANT_POSTGRES_USER:-assetiq}:${PLANT_POSTGRES_PASSWORD}@plant-postgres-1:5432/${PLANT_POSTGRES_DB:-assetiq_plant}
+      PLANT_DB_URL: postgresql+psycopg2://${PLANT_POSTGRES_USER:-assetiq}:${PLANT_POSTGRES_PASSWORD}@postgres:5432/${PLANT_POSTGRES_DB:-assetiq_plant}
       JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
       SYNC_HMAC_SECRET: ${SYNC_HMAC_SECRET:?set SYNC_HMAC_SECRET}
       STATION_SECRET_ENC_KEY: ${STATION_SECRET_ENC_KEY:?set STATION_SECRET_ENC_KEY}
