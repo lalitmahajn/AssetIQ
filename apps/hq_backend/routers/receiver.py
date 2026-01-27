@@ -4,24 +4,24 @@ import hashlib
 import hmac
 import json
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 
-from common_core.config import settings
-from common_core.db import HQSessionLocal
 from apps.hq_backend.models import (
     AppliedCorrelation,
     DeadLetter,
-    RollupDaily,
     EmailQueue,
     PlantRegistry,
+    RollupDaily,
     TicketSnapshot,
     TimelineEventHQ,
 )
 from apps.hq_backend.schema_validate import validate_entity
+from common_core.config import settings
+from common_core.db import HQSessionLocal
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -40,16 +40,16 @@ class SyncItem(BaseModel):
     site_code: str = Field(..., min_length=1, max_length=16)
     entity_type: str = Field(..., min_length=1, max_length=32)
     entity_id: str = Field(..., min_length=1, max_length=64)
-    payload: Dict[str, Any]
+    payload: dict[str, Any]
     correlation_id: str = Field(..., min_length=1, max_length=128)
 
 
 class BatchPayload(BaseModel):
-    items: List[SyncItem]
+    items: list[SyncItem]
 
 
 @router.post("/receive")
-async def receive(request: Request) -> Dict[str, Any]:
+async def receive(request: Request) -> dict[str, Any]:
     raw = await request.body()
     sig = request.headers.get("X-Signature", "")
     if not sig:
@@ -59,8 +59,8 @@ async def receive(request: Request) -> Dict[str, Any]:
     try:
         data = json.loads(raw.decode("utf-8"))
         batch = BatchPayload.model_validate(data)
-    except Exception:
-        raise HTTPException(status_code=400, detail="invalid_payload")
+    except Exception as e:
+        raise HTTPException(status_code=400, detail="invalid_payload") from e
 
     db = HQSessionLocal()
     applied = 0
@@ -231,7 +231,7 @@ def _apply_ticket(db, item: SyncItem, now: datetime) -> None:
         )
     ).scalar_one_or_none()
 
-    def _dt(v: Optional[str]) -> Optional[datetime]:
+    def _dt(v: str | None) -> datetime | None:
         if not v:
             return None
         try:
@@ -272,7 +272,7 @@ def _apply_timeline_event(db, item: SyncItem, now: datetime) -> None:
     p = item.payload
     event_id = item.entity_id
 
-    def _dt(v: Optional[str]) -> datetime:
+    def _dt(v: str | None) -> datetime:
         if not v:
             return now
         try:

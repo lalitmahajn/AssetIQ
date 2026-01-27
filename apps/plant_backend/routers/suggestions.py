@@ -12,14 +12,20 @@ router = APIRouter(prefix="/suggestions", tags=["suggestions"])
 
 
 @router.get("/list")
-def list_suggestions(status: str = "pending", user=Depends(require_perm("master.manage"))):
+def list_suggestions(
+    status: str = "pending",
+    type_code: str | None = None,
+    user=Depends(require_perm("master.manage")),
+):
     db = PlantSessionLocal()
     try:
-        q = (
-            select(ReasonSuggestion)
-            .where(ReasonSuggestion.status == status)
-            .order_by(desc(ReasonSuggestion.count))
-        )
+        q = select(ReasonSuggestion).where(ReasonSuggestion.status == status)
+
+        if type_code:
+            q = q.where(ReasonSuggestion.master_type_code == type_code)
+
+        q = q.order_by(desc(ReasonSuggestion.count))
+
         rows = db.execute(q).scalars().all()
         return [
             {
@@ -28,6 +34,7 @@ def list_suggestions(status: str = "pending", user=Depends(require_perm("master.
                 "count": r.count,
                 "status": r.status,
                 "threshold": r.threshold,
+                "master_type_code": r.master_type_code,
             }
             for r in rows
         ]

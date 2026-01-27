@@ -68,9 +68,9 @@ class Ticket(Base):
     title = Column(String(256), nullable=False)
     status = Column(String(32), nullable=False, index=True, default="OPEN")
     priority = Column(String(32), nullable=False, default="MEDIUM")
-    assigned_to_user_id = Column(String(64), nullable=True)
-    assigned_dept = Column(String(64), nullable=True)
-    source = Column(String(32), nullable=False, default="MANUAL")  # MANUAL, AUTO
+    assigned_to_user_id = Column(String(64), nullable=True, index=True)
+    assigned_dept = Column(String(64), nullable=True, index=True)
+    source = Column(String(32), nullable=False, default="MANUAL", index=True)  # MANUAL, AUTO
     stop_id = Column(String(64), nullable=True, index=True)  # Link to StopQueue/Timeline
     created_at_utc = Column(DateTime, nullable=False, index=True)
     sla_due_at_utc = Column(DateTime, nullable=True, index=True)
@@ -78,8 +78,12 @@ class Ticket(Base):
     resolved_at_utc = Column(DateTime, nullable=True)
     resolution_reason = Column(String(64), nullable=True)  # Root cause code
     close_note = Column(Text, nullable=True)
-    sla_warning_sent = Column(Boolean, nullable=False, default=False)  # Track if warning alert sent
-    sla_breach_sent = Column(Boolean, default=False, nullable=False)  # Track if breach alert sent
+    sla_warning_sent = Column(
+        Boolean, nullable=False, default=False, index=True
+    )  # Track if warning alert sent
+    sla_breach_sent = Column(
+        Boolean, default=False, nullable=False, index=True
+    )  # Track if breach alert sent
     ticket_code = Column(String(32), nullable=True, index=True)  # YYYYMMDD-HHMM-NNNN
 
 
@@ -102,9 +106,9 @@ class EventOutbox(Base):
     payload_json = Column(JSON, nullable=False)
     correlation_id = Column(String(128), nullable=False, unique=True)
     created_at_utc = Column(DateTime, nullable=False)
-    sent_at_utc = Column(DateTime, nullable=True)
+    sent_at_utc = Column(DateTime, nullable=True, index=True)
     retry_count = Column(Integer, nullable=False, default=0)
-    next_attempt_at_utc = Column(DateTime, nullable=True)
+    next_attempt_at_utc = Column(DateTime, nullable=True, index=True)
     last_error = Column(String(300), nullable=True)
 
 

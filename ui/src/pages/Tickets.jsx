@@ -1,8 +1,10 @@
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense, lazy } from "react";
 import { apiGet, apiPost } from "../api";
-import AssetHistoryView from "../components/AssetHistoryView"; // Import shared component
-import ClosedTickets from "./ClosedTickets";
+
+// Lazy load to optimize bundle size
+const AssetHistoryView = lazy(() => import("../components/AssetHistoryView"));
+const ClosedTickets = lazy(() => import("./ClosedTickets"));
 
 /* --- HELPER COMPONENTS --- */
 
@@ -115,8 +117,25 @@ export default function Tickets({ plantName }) {
   const [showAssetDrop, setShowAssetDrop] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
 
+  // Dynamic Masters State
+  const [departments, setDepartments] = useState([]);
+  const [resolutionReasons, setResolutionReasons] = useState([]);
+
+  // "Other" custom text state
+  const [customDept, setCustomDept] = useState("");
+
   // History State
   const [history, setHistory] = useState([]);
+
+  // Fetch Dynamic Masters on mount
+  useEffect(() => {
+    apiGet("/masters-dynamic/items?type_code=DEPARTMENT")
+      .then(data => setDepartments(data || []))
+      .catch(() => setDepartments([]));
+    apiGet("/masters-dynamic/items?type_code=RESOLUTION_REASON")
+      .then(data => setResolutionReasons(data || []))
+      .catch(() => setResolutionReasons([]));
+  }, []);
 
   // No longer using modal
   // const [historyModalAsset, setHistoryModalAsset] = useState(null);
@@ -185,10 +204,12 @@ export default function Tickets({ plantName }) {
   // Handlers
   async function doCreate(e) {
     e.preventDefault();
+    // Use customDept if "Other" was selected
+    const finalDept = newDept === "__OTHER__" ? customDept : newDept;
     try {
-      await apiPost("/ui/tickets/create", { title: newTitle, asset_id: newAsset, priority: newPriority, dept: newDept });
+      await apiPost("/ui/tickets/create", { title: newTitle, asset_id: newAsset, priority: newPriority, dept: finalDept });
       setShowCreate(false);
-      setNewTitle(""); setNewAsset(""); setNewDept("");
+      setNewTitle(""); setNewAsset(""); setNewDept(""); setCustomDept("");
       loadList();
     } catch (e) { setErr(e.message); }
   }
@@ -212,6 +233,7 @@ export default function Tickets({ plantName }) {
   }
 
   if (view === "DETAIL" && selectedTicketId) {
+    // TicketDetail remains bundled as it is local function
     return <TicketDetail
       id={selectedTicketId}
       onBack={() => { setView("LIST"); setSelectedTicketId(null); loadList(); }}
@@ -220,18 +242,26 @@ export default function Tickets({ plantName }) {
   }
 
   if (view === "HISTORY" && selectedAssetId) {
-    return <AssetHistoryView
-      assetId={selectedAssetId}
-      onBack={() => { setView("LIST"); setSelectedAssetId(null); loadList(); }}
-    />;
+    return (
+      <Suspense fallback={<div className="p-12 text-center text-gray-400">Loading History...</div>}>
+        <AssetHistoryView
+          assetId={selectedAssetId}
+          onBack={() => { setView("LIST"); setSelectedAssetId(null); loadList(); }}
+        />
+      </Suspense>
+    );
   }
 
   if (view === "CLOSED_LIST") {
-    return <ClosedTickets
-      onBack={() => { setView("LIST"); loadList(); }}
-      onOpenTicket={(id) => { setSelectedTicketId(id); setView("DETAIL"); }}
-      onOpenHistory={(assetId) => { setSelectedAssetId(assetId); setView("HISTORY"); }}
-    />;
+    return (
+      <Suspense fallback={<div className="p-12 text-center text-gray-400">Loading Closed Tickets...</div>}>
+        <ClosedTickets
+          onBack={() => { setView("LIST"); loadList(); }}
+          onOpenTicket={(id) => { setSelectedTicketId(id); setView("DETAIL"); }}
+          onOpenHistory={(assetId) => { setSelectedAssetId(assetId); setView("HISTORY"); }}
+        />
+      </Suspense>
+    );
   }
 
   return (
@@ -239,7 +269,7 @@ export default function Tickets({ plantName }) {
       {/* HEADER */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Tickets</h2>
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Tickets</h2>
           <div className="flex items-center gap-4 mt-1">
             <label className="flex items-center gap-2 text-sm text-gray-600 cursor-pointer select-none">
               <input type="checkbox" checked={myTasksOnly} onChange={e => setMyTasksOnly(e.target.checked)} className="rounded text-blue-600 focus:ring-blue-500" />
@@ -287,11 +317,9 @@ export default function Tickets({ plantName }) {
             <label className="text-xs font-bold text-gray-500 uppercase block mb-1">Department</label>
             <select className="w-full text-sm border-gray-300 rounded-md" value={filters.dept} onChange={e => setFilters({ ...filters, dept: e.target.value })}>
               <option value="">All Depts</option>
-              <option value="Maintenance">Maintenance</option>
-              <option value="Electrical">Electrical</option>
-              <option value="Mechanical">Mechanical</option>
-              <option value="Instrumentation">Instrumentation</option>
-              <option value="Production">Production</option>
+              {departments.map(d => (
+                <option key={d.id} value={d.item_name}>{d.item_name}</option>
+              ))}
             </select>
           </div>
           <div>
@@ -380,14 +408,24 @@ export default function Tickets({ plantName }) {
                   </div>
                   <div className="flex-1">
                     <label className="text-xs font-bold text-gray-500 uppercase tracking-wide mb-1 block">Department</label>
-                    <select value={newDept} onChange={e => setNewDept(e.target.value)} className="w-full h-10 border border-gray-300 rounded-lg px-4 bg-white">
+                    <select value={newDept} onChange={e => {
+                      setNewDept(e.target.value);
+                      if (e.target.value !== "__OTHER__") setCustomDept("");
+                    }} className="w-full h-10 border border-gray-300 rounded-lg px-4 bg-white">
                       <option value="">-- Select --</option>
-                      <option value="Maintenance">Maintenance</option>
-                      <option value="Electrical">Electrical</option>
-                      <option value="Mechanical">Mechanical</option>
-                      <option value="Instrumentation">Instrumentation</option>
-                      <option value="Production">Production</option>
+                      {departments.map(d => (
+                        <option key={d.id} value={d.item_name}>{d.item_name}</option>
+                      ))}
+                      <option value="__OTHER__">Other (specify)</option>
                     </select>
+                    {newDept === "__OTHER__" && (
+                      <input
+                        className="w-full h-10 border border-gray-300 rounded-lg px-4 mt-2 bg-white"
+                        placeholder="Enter department name..."
+                        value={customDept}
+                        onChange={e => setCustomDept(e.target.value)}
+                      />
+                    )}
                   </div>
                   <button type="submit" className="h-10 bg-green-600 text-white px-6 rounded-lg font-medium hover:bg-green-700 transition-colors shadow-sm">
                     Create
@@ -424,17 +462,17 @@ export default function Tickets({ plantName }) {
       {/* LIST */}
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">
+          <thead className="bg-gray-50 border-b border-gray-100 text-left text-xs font-bold text-gray-400 uppercase tracking-widest">
             <tr>
-              <th className="px-6 py-3">Source</th>
-              <th className="px-6 py-3">Asset</th>
-              <th className="px-6 py-3">Details</th>
-              <th className="px-6 py-3">Created</th>
-              <th className="px-6 py-3">Department</th>
-              <th className="px-6 py-3">Status</th>
-              <th className="px-6 py-3">SLA Due</th>
-              <th className="px-6 py-3">Owner</th>
-              <th className="px-6 py-3">Action</th>
+              <th className="px-6 py-4">Source</th>
+              <th className="px-6 py-4">Asset</th>
+              <th className="px-6 py-4">Details</th>
+              <th className="px-6 py-4">Created</th>
+              <th className="px-6 py-4">Department</th>
+              <th className="px-6 py-4">Status</th>
+              <th className="px-6 py-4">SLA Due</th>
+              <th className="px-6 py-4">Owner</th>
+              <th className="px-6 py-4">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -506,6 +544,8 @@ function TicketDetail({ id, onBack, currentUser }) {
 
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
+  const [resolutionReasons, setResolutionReasons] = useState([]);
+  const [customReason, setCustomReason] = useState("");
 
   async function reload() {
     setLoading(true);
@@ -517,6 +557,13 @@ function TicketDetail({ id, onBack, currentUser }) {
   }
 
   useEffect(() => { reload(); }, [id]);
+
+  // Fetch resolution reasons for close dropdown
+  useEffect(() => {
+    apiGet("/masters-dynamic/items?type_code=RESOLUTION_REASON")
+      .then(data => setResolutionReasons(data || []))
+      .catch(() => setResolutionReasons([]));
+  }, []);
 
   async function doAck() {
     try {
@@ -541,107 +588,128 @@ function TicketDetail({ id, onBack, currentUser }) {
   const acts = d.activity || [];
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
-      {/* LEFT: INFO & ACTIONS */}
-      <div className="lg:col-span-2 space-y-6">
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          <div className="flex justify-between items-start mb-4">
-            <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center gap-1 text-sm font-medium mb-2">
-              &larr; Back to List
-            </button>
-            <StatusBadge s={t.status} />
-          </div>
-
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">{t.title}</h1>
-          <div className="flex gap-4 text-sm text-gray-600 mb-6 font-mono">
-            <span>ID: <span className="font-bold text-gray-800">{t.ticket_code || t.id}</span></span>
-            <span>&bull;</span>
-            <span>Asset: <span className="font-bold text-gray-900">{t.asset_id}</span></span>
-            <span>&bull;</span>
-            <span>SLA: <SlaTimer due={t.sla_due_at_utc} /></span>
-          </div>
-
-          {t.status === "OPEN" && (
-            <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg flex items-center justify-between">
-              <div>
-                <p className="text-blue-900 font-semibold">New Ticket</p>
-                <p className="text-blue-700 text-sm">Acknowledge this ticket to start working on it.</p>
-              </div>
-              <button onClick={doAck} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm">
-                Acknowledge
+    <>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in-up">
+        {/* LEFT: INFO & ACTIONS */}
+        <div className="lg:col-span-2 space-y-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+            <div className="flex justify-between items-start mb-4">
+              <button onClick={onBack} className="text-gray-500 hover:text-gray-800 flex items-center gap-1 text-sm font-medium mb-2">
+                &larr; Back to List
               </button>
+              <StatusBadge s={t.status} />
             </div>
-          )}
 
-          {t.status === "ACK" && (
-            <div className="bg-green-50 border border-green-100 p-6 rounded-lg space-y-4">
-              <h3 className="font-bold text-green-900">Resolve Ticket</h3>
+            <h1 className="text-3xl font-bold text-gray-900 mb-2">{t.title}</h1>
+            <div className="flex gap-4 text-sm text-gray-600 mb-6 font-mono">
+              <span>ID: <span className="font-bold text-gray-800">{t.ticket_code || t.id}</span></span>
+              <span>&bull;</span>
+              <span>Asset: <span className="font-bold text-gray-900">{t.asset_id}</span></span>
+              <span>&bull;</span>
+              <span>SLA: <SlaTimer due={t.sla_due_at_utc} /></span>
+            </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Root Cause (Reason) <span className="text-red-500">*</span></label>
-                <select
-                  className="w-full border-gray-300 rounded-lg p-2"
-                  value={reason}
-                  onChange={e => setReason(e.target.value)}
+            {t.status === "OPEN" && (
+              <div className="bg-blue-50 border border-blue-100 p-4 rounded-lg flex items-center justify-between">
+                <div>
+                  <p className="text-blue-900 font-semibold">New Ticket</p>
+                  <p className="text-blue-700 text-sm">Acknowledge this ticket to start working on it.</p>
+                </div>
+                <button onClick={doAck} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium shadow-sm">
+                  Acknowledge
+                </button>
+              </div>
+            )}
+
+            {t.status === "ACK" && (
+              <div className="bg-green-50 border border-green-100 p-6 rounded-lg space-y-4">
+                <h3 className="font-bold text-green-900">Resolve Ticket</h3>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Root Cause (Reason) <span className="text-red-500">*</span></label>
+                  <select
+                    className="w-full border-gray-300 rounded-lg p-2"
+                    value={reason}
+                    onChange={e => {
+                      setReason(e.target.value);
+                      if (e.target.value !== "__OTHER__") setCustomReason("");
+                    }}
+                  >
+                    <option value="">-- Select Reason --</option>
+                    {resolutionReasons.map(r => (
+                      <option key={r.id} value={r.item_name}>{r.item_name}</option>
+                    ))}
+                    <option value="__OTHER__">Other (specify)</option>
+                  </select>
+                  {reason === "__OTHER__" && (
+                    <input
+                      className="w-full border-gray-300 rounded-lg p-2 mt-2"
+                      placeholder="Enter resolution reason..."
+                      value={customReason}
+                      onChange={e => setCustomReason(e.target.value)}
+                    />
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Resolution Notes <span className="text-red-500">*</span></label>
+                  <textarea
+                    className="w-full border-gray-300 rounded-lg p-2 h-20"
+                    placeholder="What action did you take?"
+                    value={note}
+                    onChange={e => setNote(e.target.value)}
+                  />
+                </div>
+
+                <button
+                  onClick={() => {
+                    // Use customReason if "Other" was selected
+                    const finalReason = reason === "__OTHER__" ? customReason : reason;
+                    apiPost("/ui/tickets/close", { ticket_id: id, close_note: note, resolution_reason: finalReason })
+                      .then(reload)
+                      .catch(e => setErr(e.message));
+                  }}
+                  className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold shadow-sm"
                 >
-                  <option value="">-- Select Reason --</option>
-                  <option value="Machine Wear">Machine Wear</option>
-                  <option value="Operator Error">Operator Error</option>
-                  <option value="Material Defect">Material Defect</option>
-                  <option value="Software Glitch">Software Glitch</option>
-                  <option value="Unpreventable">Unpreventable (External)</option>
-                </select>
+                  Close Ticket
+                </button>
               </div>
+            )}
 
-              <div>
-                <label className="block text-xs font-semibold uppercase text-green-800 mb-1">Resolution Notes <span className="text-red-500">*</span></label>
-                <textarea
-                  className="w-full border-gray-300 rounded-lg p-2 h-20"
-                  placeholder="What action did you take?"
-                  value={note}
-                  onChange={e => setNote(e.target.value)}
-                />
+            {t.status === "CLOSED" && (
+              <div className="bg-gray-100 p-4 rounded-lg text-gray-600 text-sm">
+                <span className="font-bold">Closed:</span> {t.resolution_reason || "No Reason"} - {t.close_note}
               </div>
-
-              <button onClick={doClose} className="w-full bg-green-600 hover:bg-green-700 text-white py-2 rounded-lg font-bold shadow-sm">
-                Close Ticket
-              </button>
-            </div>
-          )}
-
-          {t.status === "CLOSED" && (
-            <div className="bg-gray-100 p-4 rounded-lg text-gray-600 text-sm">
-              <span className="font-bold">Closed:</span> {t.resolution_reason || "No Reason"} - {t.close_note}
-            </div>
-          )}
+            )}
+          </div>
         </div>
-      </div>
 
-      {/* RIGHT: TIMELINE */}
-      <div className="bg-white rounded-xl border border-gray-200 flex flex-col h-[600px] shadow-sm">
-        <div className="p-4 border-b border-gray-100 font-bold text-gray-800">Activity History</div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
-          {acts.map(a => (
-            <div key={a.id} className="flex gap-3">
-              <div className="flex-shrink-0 mt-1">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white
+        {/* RIGHT: TIMELINE */}
+        <div className="bg-white rounded-xl border border-gray-200 flex flex-col h-[600px] shadow-sm">
+          <div className="p-4 border-b border-gray-100 font-bold text-gray-800">Activity History</div>
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50">
+            {acts.map(a => (
+              <div key={a.id} className="flex gap-3">
+                <div className="flex-shrink-0 mt-1">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white
                                     ${a.type === 'CREATED' ? 'bg-purple-500' : a.type === 'ACK' ? 'bg-blue-500' : a.type === 'CLOSED' ? 'bg-green-500' : 'bg-gray-400'}`}>
-                  {a.type[0]}
+                    {a.type[0]}
+                  </div>
+                </div>
+                <div className="flex-1 bg-white p-3 rounded-lg border border-gray-200 shadow-sm text-sm">
+                  <div className="flex justify-between items-center mb-1">
+                    <span className="font-bold text-gray-900">{a.type}</span>
+                    <span className="text-xs text-gray-400">{new Date(a.created_at_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  </div>
+                  <p className="text-gray-600">{a.details}</p>
+                  {a.actor && <div className="mt-2 text-xs text-gray-400 font-mono">By: {a.actor}</div>}
                 </div>
               </div>
-              <div className="flex-1 bg-white p-3 rounded-lg border border-gray-200 shadow-sm text-sm">
-                <div className="flex justify-between items-center mb-1">
-                  <span className="font-bold text-gray-900">{a.type}</span>
-                  <span className="text-xs text-gray-400">{new Date(a.created_at_utc).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                </div>
-                <p className="text-gray-600">{a.details}</p>
-                {a.actor && <div className="mt-2 text-xs text-gray-400 font-mono">By: {a.actor}</div>}
-              </div>
-            </div>
-          ))}
-          <div className="text-center text-xs text-gray-400 pt-4">End of history</div>
+            ))}
+            <div className="text-center text-xs text-gray-400 pt-4">End of history</div>
+          </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }

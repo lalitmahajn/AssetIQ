@@ -5,8 +5,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 
 from apps.plant_backend.deps import require_perm
-from apps.plant_backend.models import Ticket, TicketActivity, User
-from apps.plant_backend.services import acknowledge_ticket, close_ticket, create_ticket
+from apps.plant_backend.models import MasterItem, Ticket, TicketActivity, User
+from apps.plant_backend.services import (
+    acknowledge_ticket,
+    close_ticket,
+    create_ticket,
+    suggestion_record,
+)
 from common_core.db import PlantSessionLocal
 
 router = APIRouter(prefix="/ui/tickets", tags=["ui-tickets"])
@@ -78,6 +83,8 @@ def create(body: dict, user: Annotated[dict, Depends(require_perm("ticket.create
     asset_id = body.get("asset_id", "")
     priority = body.get("priority", "MEDIUM")
     dept = body.get("dept")
+    print(f"DEBUG: Ticket Create - Dept: {dept}", flush=True)
+
     if not title or not asset_id:
         raise HTTPException(status_code=400, detail="title and asset_id required")
     db = PlantSessionLocal()
@@ -94,6 +101,24 @@ def create(body: dict, user: Annotated[dict, Depends(require_perm("ticket.create
             assigned_to=current_username,
             dept=dept,
         )
+
+        # Self-Learning: Record unknown department
+        if dept:
+            exists = db.execute(
+                select(MasterItem).where(
+                    MasterItem.master_type_code == "DEPARTMENT",
+                    MasterItem.item_name == dept,
+                    MasterItem.is_active.is_(True),
+                )
+            ).scalar_one_or_none()
+            print(f"DEBUG: Dept exists in Master? {exists}", flush=True)
+            if not exists:
+                sug = suggestion_record(db, "DEPARTMENT", dept, current_username)
+                print(
+                    f"DEBUG: Recorded Suggestion: {sug.id if sug else 'None'} status={sug.status if sug else 'N/A'}",
+                    flush=True,
+                )
+
         db.commit()
         return {"ok": True, "id": t.id}
     except Exception as e:
@@ -120,6 +145,20 @@ def close(body: dict, user: Annotated[dict, Depends(require_perm("ticket.close")
             resolution_reason=resolution_reason,
             actor_id=None,
         )
+
+        # Self-Learning: Record unknown resolution reason
+        if resolution_reason:
+            exists = db.execute(
+                select(MasterItem).where(
+                    MasterItem.master_type_code == "RESOLUTION_REASON",
+                    MasterItem.item_name == resolution_reason,
+                    MasterItem.is_active.is_(True),
+                )
+            ).scalar_one_or_none()
+            if not exists:
+                current_username = user.get("sub", "admin") if user else None
+                suggestion_record(db, "RESOLUTION_REASON", resolution_reason, current_username)
+
         db.commit()
         return {"ok": True, "id": t.id}
     except Exception as e:

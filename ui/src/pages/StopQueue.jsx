@@ -36,8 +36,8 @@ export default function StopQueue() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-gray-800">Stop Queue</h2>
-          <p className="text-gray-500 text-sm">Open machine stops requiring attention</p>
+          <h2 className="text-2xl font-bold text-gray-900 tracking-tight">Stop Queue</h2>
+          <p className="text-gray-500 text-sm mt-1">Open machine stops requiring attention</p>
         </div>
         <button
           onClick={load}
@@ -58,12 +58,12 @@ export default function StopQueue() {
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
         <table className="w-full">
-          <thead className="bg-gray-50 border-b border-gray-200">
+          <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Asset</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Reason</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Opened</th>
-              <th className="text-left px-6 py-3 text-xs font-semibold text-gray-600 uppercase tracking-wider">Action</th>
+              <th className="text-left px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Asset</th>
+              <th className="text-left px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Reason</th>
+              <th className="text-left px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Opened</th>
+              <th className="text-left px-6 py-4 text-xs font-bold text-gray-400 uppercase tracking-widest">Action</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">

@@ -40,6 +40,11 @@ export default function StationConfig() {
 
     useEffect(() => {
         loadConfig();
+        // Auto-refresh only WhatsApp status every 15 seconds (not the whole config)
+        const interval = setInterval(() => {
+            refreshWhatsAppStatus();
+        }, 15000);
+        return () => clearInterval(interval);
     }, []);
 
     async function loadConfig() {
@@ -48,6 +53,21 @@ export default function StationConfig() {
             setConfig(prev => ({ ...prev, ...data }));
         } catch (e) {
             console.error("Failed to load config", e);
+        }
+    }
+
+    // Only refresh WhatsApp status fields, not editable fields
+    async function refreshWhatsAppStatus() {
+        try {
+            const data = await apiGet("/master/config");
+            // Only update status fields, preserve user's unsaved edits
+            setConfig(prev => ({
+                ...prev,
+                whatsappHeartbeat: data.whatsappHeartbeat,
+                whatsappQRCode: data.whatsappQRCode,
+            }));
+        } catch (e) {
+            console.error("Failed to refresh WhatsApp status", e);
         }
     }
 
@@ -277,80 +297,94 @@ export default function StationConfig() {
                     </h4>
 
                     {/* Worker Status Indicator */}
-                    <div className="bg-gray-50 p-3 rounded-md mb-4 border border-gray-200">
-                        <div className="flex items-center justify-between">
-                            <span className="text-xs font-medium text-gray-500">Worker Status</span>
-                            {(() => {
-                                let statusFn = () => <span className="text-xs text-gray-400">Checking...</span>;
-                                if (config.whatsappHeartbeat) {
-                                    try {
-                                        const hb = typeof config.whatsappHeartbeat === 'string'
-                                            ? JSON.parse(config.whatsappHeartbeat)
-                                            : config.whatsappHeartbeat;
+                    {(() => {
+                        // Compute connection state once for reuse
+                        let statusBadge = <span className="text-xs text-gray-400">Checking...</span>;
+                        let isConnected = false;
 
-                                        const now = Date.now();
-                                        const diff = (now - hb.ts) / 1000; // seconds
+                        if (config.whatsappHeartbeat) {
+                            try {
+                                const hb = typeof config.whatsappHeartbeat === 'string'
+                                    ? JSON.parse(config.whatsappHeartbeat)
+                                    : config.whatsappHeartbeat;
 
-                                        if (diff < 120) { // < 2 mins
-                                            if (hb.state === 'CONNECTED') {
-                                                statusFn = () => (
-                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
-                                                        Online
-                                                    </span>
-                                                );
-                                            } else {
-                                                statusFn = () => (
-                                                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                                                        <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
-                                                        {hb.state || "Connecting..."}
-                                                    </span>
-                                                );
-                                            }
-                                        } else {
-                                            statusFn = () => (
-                                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
-                                                    <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
-                                                    Offline
-                                                </span>
-                                            );
-                                        }
-                                    } catch (e) {
-                                        console.error("Pulse error", e);
+                                const now = Date.now();
+                                const diff = (now - hb.ts) / 1000; // seconds
+                                const stateUpper = (hb.state || '').toUpperCase();
+                                const connectedStates = ['CONNECTED', 'PAIRED', 'AUTHENTICATED', 'READY'];
+
+                                if (diff < 120) { // < 2 mins
+                                    isConnected = connectedStates.includes(stateUpper);
+
+                                    if (isConnected) {
+                                        statusBadge = (
+                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-green-500"></span>
+                                                Online
+                                            </span>
+                                        );
+                                    } else {
+                                        statusBadge = (
+                                            <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
+                                                <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse"></span>
+                                                {hb.state || "Connecting..."}
+                                            </span>
+                                        );
                                     }
                                 } else {
-                                    statusFn = () => (
-                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
-                                            <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
-                                            Unknown
+                                    statusBadge = (
+                                        <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">
+                                            <span className="w-1.5 h-1.5 rounded-full bg-red-500"></span>
+                                            Offline
                                         </span>
                                     );
                                 }
-                                return statusFn();
-                            })()}
-                        </div>
-                        <div className="flex items-center justify-between mt-2">
-                            <p className="text-[10px] text-gray-400 italic">
-                                Checks connectivity every 30s. If "Offline" or "DISCONNECTED", check Docker logs.
-                            </p>
-                            <button
-                                onClick={handleLogout}
-                                className="text-[10px] font-bold text-red-600 hover:text-red-800 hover:underline px-2 py-1 rounded"
-                                title="Logs out of WhatsApp session and clears local cache"
-                            >
-                                🚪 Logout Session
-                            </button>
-                        </div>
-                        {/* Show QR Code Button when not connected */}
-                        {config.whatsappQRCode && (
-                            <button
-                                onClick={() => setShowQRModal(true)}
-                                className="mt-2 w-full px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
-                            >
-                                📱 Show QR Code to Connect
-                            </button>
-                        )}
-                    </div>
+                            } catch (e) {
+                                console.error("Pulse error", e);
+                            }
+                        } else {
+                            statusBadge = (
+                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-600">
+                                    <span className="w-1.5 h-1.5 rounded-full bg-gray-400"></span>
+                                    Unknown
+                                </span>
+                            );
+                        }
+
+                        return (
+                            <div className="bg-gray-50 p-3 rounded-md mb-4 border border-gray-200">
+                                <div className="flex items-center justify-between">
+                                    <span className="text-xs font-medium text-gray-500">Worker Status</span>
+                                    {statusBadge}
+                                </div>
+                                <div className="flex items-center justify-between mt-2">
+                                    <p className="text-[10px] text-gray-400 italic">
+                                        Auto-refreshes every 15s. If "Offline", check Docker logs.
+                                    </p>
+                                    <button
+                                        onClick={handleLogout}
+                                        disabled={!isConnected}
+                                        className={`text-[10px] font-bold px-2 py-1 rounded ${isConnected
+                                            ? 'text-red-600 hover:text-red-800 hover:underline cursor-pointer'
+                                            : 'text-gray-400 cursor-not-allowed'
+                                            }`}
+                                        title={isConnected ? "Logs out of WhatsApp session and clears local cache" : "No active session to logout"}
+                                    >
+                                        🚪 Logout Session
+                                    </button>
+                                </div>
+                                {/* Show QR Code Button when not connected */}
+                                {config.whatsappQRCode && (
+                                    <button
+                                        onClick={() => setShowQRModal(true)}
+                                        className="mt-2 w-full px-3 py-1.5 text-xs font-medium text-blue-700 bg-blue-50 border border-blue-200 rounded-md hover:bg-blue-100 transition-colors"
+                                    >
+                                        📱 Show QR Code to Connect
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })()}
 
                     {/* QR Code Modal */}
                     {showQRModal && config.whatsappQRCode && (
@@ -402,13 +436,55 @@ export default function StationConfig() {
                     </div>
 
                     <div className="mt-6 border-t border-gray-100 pt-4">
-                        <div className="bg-blue-50 border border-blue-100 rounded-md p-3 mb-4">
-                            <h6 className="text-xs font-bold text-blue-800 uppercase tracking-wide mb-1">ℹ️ Variable Reference</h6>
-                            <p className="text-[11px] text-blue-700 leading-relaxed">
-                                You can use the following variables in <strong>ALL</strong> templates below:<br />
-                                <code>{'{ticket_code}'}</code> (Friendly ID), <code>{'{asset_id}'}</code>, <code>{'{title}'}</code>, <code>{'{priority}'}</code>, <code>{'{dept}'}</code>,
-                                <code>{'{assigned_to}'}</code>, <code>{'{created_at}'}</code>, <code>{'{sla_due}'}</code>, <code>{'{site_code}'}</code>.<br />
-                                <span className="font-semibold mt-1 block">Note: Use <code>{'{ticket_code}'}</code> for the friendly ID (e.g. 20260122-1230-0001).</span>
+                        <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                            <h6 className="text-xs font-bold text-blue-900 uppercase tracking-wide mb-3 flex items-center gap-2">
+                                📋 Template Variable Reference
+                            </h6>
+
+                            <div className="space-y-3">
+                                {/* Core Variables */}
+                                <div>
+                                    <p className="text-[10px] font-semibold text-blue-800 mb-1">Core (All Templates)</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {['{ticket_code}', '{asset_id}', '{title}', '{priority}', '{site_code}'].map(v => (
+                                            <code key={v} className="px-1.5 py-0.5 bg-white text-blue-700 text-[10px] rounded border border-blue-200">{v}</code>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Time Variables */}
+                                <div>
+                                    <p className="text-[10px] font-semibold text-amber-800 mb-1">Timing</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {['{created_at}', '{sla_due}'].map(v => (
+                                            <code key={v} className="px-1.5 py-0.5 bg-white text-amber-700 text-[10px] rounded border border-amber-200">{v}</code>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Assignment Variables */}
+                                <div>
+                                    <p className="text-[10px] font-semibold text-green-800 mb-1">Assignment</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {['{dept}', '{assigned_to}'].map(v => (
+                                            <code key={v} className="px-1.5 py-0.5 bg-white text-green-700 text-[10px] rounded border border-green-200">{v}</code>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Close-only Variables */}
+                                <div>
+                                    <p className="text-[10px] font-semibold text-purple-800 mb-1">Close Template Only</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {['{close_note}', '{resolution_reason}', '{closed_at}'].map(v => (
+                                            <code key={v} className="px-1.5 py-0.5 bg-white text-purple-700 text-[10px] rounded border border-purple-200">{v}</code>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <p className="text-[9px] text-gray-500 mt-3 italic">
+                                💡 Tip: <code className="bg-gray-100 px-1 rounded">{'{ticket_code}'}</code> = friendly ID like <code className="bg-gray-100 px-1 rounded">20260127-1030-0001</code>
                             </p>
                         </div>
                     </div>
@@ -457,7 +533,7 @@ export default function StationConfig() {
                     <div className="mt-4">
                         <label className="block text-sm font-medium text-gray-700">Message Template (Ticket Created)</label>
                         <p className="text-[10px] text-gray-400 mb-1">
-                            Sent to "OK" groups when a ticket is created.
+                            Sent to <code>OK</code> groups when a new ticket is created.
                         </p>
                         <textarea
                             className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm font-mono h-24"
@@ -474,34 +550,15 @@ export default function StationConfig() {
                     </div>
 
                     <div className="mt-4 border-t border-dashed border-gray-200 pt-4">
-                        <label className="block text-sm font-medium text-gray-700">Closed Ticket Template</label>
+                        <label className="block text-sm font-medium text-gray-700">Warning Template (SLA Approaching)</label>
                         <p className="text-[10px] text-gray-400 mb-1">
-                            Additional variables: <code>{'{close_note}'}, {'{resolution_reason}'}, {'{closed_at}'}</code>
-                        </p>
-                        <textarea
-                            className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm font-mono h-24"
-                            value={config.whatsappCloseMessageTemplate || ''}
-                            onChange={e => handleChange('whatsappCloseMessageTemplate', e.target.value)}
-                            placeholder="✅ Ticket Closed..."
-                        />
-                        <button
-                            onClick={() => handleChange('whatsappCloseMessageTemplate', "✅ Ticket Closed\nID: {ticket_code}\nTitle: {title}\nNote: {close_note}")}
-                            className="text-[10px] text-purple-600 hover:text-purple-800 underline mt-1"
-                        >
-                            Reset to Default
-                        </button>
-                    </div>
-
-                    <div className="mt-4 border-t border-dashed border-gray-200 pt-4">
-                        <label className="block text-sm font-medium text-gray-700">Warning Ticket Template</label>
-                        <p className="text-[10px] text-gray-400 mb-1">
-                            Default: <code>⚠️ SLA Warning...</code>
+                            Sent to <code>WARNING</code> groups when ticket is near SLA deadline.
                         </p>
                         <textarea
                             className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm font-mono h-24"
                             value={config.whatsappWarningMessageTemplate || ''}
                             onChange={e => handleChange('whatsappWarningMessageTemplate', e.target.value)}
-                            placeholder={"⚠️ SLA Warning\nTicket: {id}\nAsset: {asset_id}..."}
+                            placeholder={"⚠️ SLA Warning\nTicket: {ticket_code}\nAsset: {asset_id}..."}
                         />
                         <button
                             onClick={() => handleChange('whatsappWarningMessageTemplate', "⚠️ SLA Warning\nTicket: {ticket_code}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}\nDue: {sla_due}")}
@@ -512,18 +569,37 @@ export default function StationConfig() {
                     </div>
 
                     <div className="mt-4 border-t border-dashed border-gray-200 pt-4">
-                        <label className="block text-sm font-medium text-gray-700">Breach Ticket Template</label>
+                        <label className="block text-sm font-medium text-gray-700">Breach Template (SLA Overdue)</label>
                         <p className="text-[10px] text-gray-400 mb-1">
-                            Default: <code>🔥 SLA BREACHED...</code>
+                            Sent to <code>BREACHED</code> groups when ticket exceeds SLA deadline.
                         </p>
                         <textarea
                             className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm font-mono h-24"
                             value={config.whatsappBreachMessageTemplate || ''}
                             onChange={e => handleChange('whatsappBreachMessageTemplate', e.target.value)}
-                            placeholder={"🔥 SLA BREACHED\nTicket: {id}\nAsset: {asset_id}..."}
+                            placeholder={"🔥 SLA BREACHED\nTicket: {ticket_code}\nAsset: {asset_id}..."}
                         />
                         <button
                             onClick={() => handleChange('whatsappBreachMessageTemplate', "🔥 SLA BREACHED\nTicket: {ticket_code}\nAsset: {asset_id}\nTitle: {title}\nPriority: {priority}\nDue: {sla_due}")}
+                            className="text-[10px] text-purple-600 hover:text-purple-800 underline mt-1"
+                        >
+                            Reset to Default
+                        </button>
+                    </div>
+
+                    <div className="mt-4 border-t border-dashed border-gray-200 pt-4">
+                        <label className="block text-sm font-medium text-gray-700">Closed Template (Ticket Resolved)</label>
+                        <p className="text-[10px] text-gray-400 mb-1">
+                            Sent when ticket is closed. Extra variables: <code>{'{close_note}'}</code>, <code>{'{resolution_reason}'}</code>, <code>{'{closed_at}'}</code>
+                        </p>
+                        <textarea
+                            className="w-full border border-gray-300 rounded-md shadow-sm p-2 text-sm font-mono h-24"
+                            value={config.whatsappCloseMessageTemplate || ''}
+                            onChange={e => handleChange('whatsappCloseMessageTemplate', e.target.value)}
+                            placeholder="✅ Ticket Closed..."
+                        />
+                        <button
+                            onClick={() => handleChange('whatsappCloseMessageTemplate', "✅ Ticket Closed\nID: {ticket_code}\nTitle: {title}\nNote: {close_note}")}
                             className="text-[10px] text-purple-600 hover:text-purple-800 underline mt-1"
                         >
                             Reset to Default

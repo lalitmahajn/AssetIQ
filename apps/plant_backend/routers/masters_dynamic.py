@@ -53,3 +53,33 @@ def create_item(body: dict, user=Depends(require_perm("master.manage"))):
         return {"ok": True, "id": mi.id}
     finally:
         db.close()
+
+
+@router.post("/items/toggle")
+def toggle_item_active(body: dict, user=Depends(require_perm("master.manage"))):
+    item_id = body.get("item_id")
+    active = body.get(
+        "is_active"
+    )  # Optional: if not provided, could toggle. But let's be explicit.
+
+    if item_id is None:
+        raise HTTPException(status_code=400, detail="item_id required")
+
+    db = PlantSessionLocal()
+    try:
+        item = db.get(MasterItem, item_id)
+        if not item:
+            raise HTTPException(status_code=404, detail="Item not found")
+
+        # If strict toggle is desired: item.is_active = not item.is_active
+        # But for UI 'Disable' button, we usually mean set to False.
+        # Let's support explicit setting if provided, else toggle.
+        if active is not None:
+            item.is_active = bool(active)
+        else:
+            item.is_active = not item.is_active
+
+        db.commit()
+        return {"ok": True, "new_state": item.is_active}
+    finally:
+        db.close()

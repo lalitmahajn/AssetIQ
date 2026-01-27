@@ -7,9 +7,16 @@ export default function Login({ onLoggedIn }) {
   const [pin, setPin] = useState("");
   const [err, setErr] = useState("");
   const [loading, setLoading] = useState(false);
+  const [plantName, setPlantName] = useState("");
 
   const navigate = useNavigate();
   const location = useLocation();
+
+  useEffect(() => {
+    apiGet("/ui/system-config")
+      .then((cfg) => setPlantName(cfg.plant_name || ""))
+      .catch(() => { }); // Ignore errors, fallback to empty string
+  }, []);
 
   async function submit(e) {
     e.preventDefault();

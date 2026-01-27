@@ -6,14 +6,13 @@ Populates the Admin > Master Management tabs.
 
 import os
 import sys
-import random
 from datetime import datetime
 
 sys.path.append(os.getcwd())
-from common_core.db import PlantSessionLocal
-from apps.plant_backend import models, services
 
+from apps.plant_backend import models, services
 from common_core.config import settings
+from common_core.db import PlantSessionLocal
 
 SITE_CODE = settings.plant_site_code or "P01"
 ACTOR_ID = "system_seed"
@@ -48,6 +47,40 @@ def seed_dynamic_masters(db):
             services.master_item_create(db, type_code, code, d, actor_id=ACTOR_ID)
     db.commit()
     print("   Created 'Departments' master list.")
+
+    # Create a new Master Type: "RESOLUTION_REASON"
+    type_code2 = "RESOLUTION_REASON"
+    mt2 = db.query(models.MasterType).filter_by(type_code=type_code2).first()
+    if not mt2:
+        mt2 = models.MasterType(
+            site_code=SITE_CODE,
+            type_code=type_code2,
+            name="Resolution Reasons",
+            description="Root cause categories for closing tickets",
+            created_at_utc=datetime.utcnow(),
+        )
+        db.add(mt2)
+        db.flush()
+
+    # Add Resolution Reason Items
+    reasons = [
+        "Machine Wear",
+        "Operator Error",
+        "Material Defect",
+        "Software Glitch",
+        "Unpreventable (External)",
+    ]
+    for r in reasons:
+        code = r.upper().replace(" ", "_").replace("(", "").replace(")", "")
+        exists = (
+            db.query(models.MasterItem)
+            .filter_by(master_type_code=type_code2, item_code=code)
+            .first()
+        )
+        if not exists:
+            services.master_item_create(db, type_code2, code, r, actor_id=ACTOR_ID)
+    db.commit()
+    print("   Created 'Resolution Reasons' master list.")
 
 
 def seed_self_learning(db):

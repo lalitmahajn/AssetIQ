@@ -59,7 +59,7 @@ const client = new Client({
 client.on('qr', async (qr) => {
     console.log('--- SCAN QR CODE WITH WHATSAPP ---');
     qrcode.generate(qr, { small: true });
-    
+
     // Save QR code to database for UI access
     try {
         const query = `
@@ -78,11 +78,11 @@ client.on('qr', async (qr) => {
 client.on('ready', async () => {
     isClientReady = true;
     console.log('WhatsApp Client is Ready!');
-    
+
     // Clear QR code from database (no longer needed)
     try {
         await pool.query("DELETE FROM system_config WHERE config_key = 'whatsappQRCode'");
-        
+
         // [DEBUG] Log all available chats to help user verify names
         const chats = await client.getChats();
         console.log("---------------------------------------------------");
@@ -118,6 +118,7 @@ async function startPolling() {
             );
             if (logoutCheck.rows.length > 0) {
                 console.log('Logout request detected! Logging out...');
+                isClientReady = false; // Mark as not ready during logout
                 try {
                     await client.logout();
                     console.log('Logout successful.');
@@ -129,6 +130,14 @@ async function startPolling() {
                 // Also clear heartbeats/QR to force a clean state
                 await pool.query("DELETE FROM system_config WHERE config_key = 'whatsappQRCode'");
                 console.log('Cleaning up session files...');
+
+                // Reinitialize client to generate new QR code
+                console.log('Reinitializing client for fresh QR code...');
+                try {
+                    await client.initialize();
+                } catch (e) {
+                    console.error('Reinitialize failed:', e.message);
+                }
             }
 
             // 2. Poll for PENDING messages (Only if client is ready)
@@ -149,16 +158,30 @@ async function startPolling() {
 
 async function startHeartbeat() {
     console.log('Started heartbeat service...');
-    
+
     const sendPulse = async () => {
         try {
             let state = 'DISCONNECTED';
             if (isClientReady) {
                 try {
-                    state = await client.getState();
-                    if (!state) state = 'CONNECTED'; 
+                    const rawState = await client.getState();
+                    // Normalize state - rawState can be string, object, null, or undefined
+                    if (!rawState) {
+                        state = 'CONNECTED'; // Client is ready but getState returned nothing
+                    } else if (typeof rawState === 'string') {
+                        // Normalize known connected states to 'CONNECTED'
+                        const connectedStates = ['CONNECTED', 'PAIRED', 'AUTHENTICATED'];
+                        state = connectedStates.includes(rawState.toUpperCase()) ? 'CONNECTED' : rawState.toUpperCase();
+                    } else if (typeof rawState === 'object') {
+                        // Some library versions return an object with a state property
+                        state = rawState.state || rawState._state || 'CONNECTED';
+                    } else {
+                        state = 'CONNECTED';
+                    }
                 } catch (e) {
-                    state = 'READY_BUT_NO_STATE';
+                    // If client is ready but getState fails, it's likely still connected
+                    console.warn('getState() failed but client is ready:', e.message);
+                    state = 'CONNECTED';
                 }
             } else {
                 // If we have a QR code in DB, we are waiting for scan
@@ -181,7 +204,7 @@ async function startHeartbeat() {
                 ON CONFLICT (config_key) 
                 DO UPDATE SET config_value = $1, updated_at_utc = NOW();
             `, [heartbeatData]);
-            
+
             console.log(`Heartbeat sent: ${state}`);
         } catch (err) {
             console.error('Heartbeat Failed:', err.message);
@@ -198,7 +221,7 @@ async function processMessage(row) {
     const { id, phone_number, message, sla_state } = row;
     try {
         console.log(`Processing message (Queue ID: ${id}, SLA: ${sla_state || 'N/A'})...`);
-        
+
         // Split by comma and clean up whitespace
         const rawTargets = phone_number.split(',').map(t => t.trim()).filter(t => t.length > 0);
         let successCount = 0;
@@ -210,19 +233,19 @@ async function processMessage(row) {
                 // Parse conditional format: "GroupName:SLAState" or just "GroupName"
                 let targetName = rawTarget;
                 let requiredSlaState = null;
-                
+
                 if (rawTarget.includes(':')) {
                     const parts = rawTarget.split(':');
                     targetName = parts[0].trim();
                     requiredSlaState = parts[1].trim().toUpperCase();
                 }
-                
+
                 // Check SLA condition
                 if (requiredSlaState && sla_state) {
                     // [UPDATED] Check match against ANY of the states in the comma-separated sla_state
                     // e.g. required="WARNING", actual="OK,WARNING" => MATCH
                     const currentStates = sla_state.toUpperCase().split(',').map(s => s.trim());
-                    
+
                     // DEBUG LOG
                     console.log(`[DEBUG] Checking ${targetName}: Required='${requiredSlaState}', Current=[${currentStates.map(s => `'${s}'`).join(', ')}]`);
 
@@ -232,7 +255,7 @@ async function processMessage(row) {
                         continue;
                     }
                 }
-                
+
                 let targetId = '';
 
                 if (targetName.includes('@g.us') || targetName.includes('@c.us')) {
@@ -245,7 +268,7 @@ async function processMessage(row) {
                     console.log(`Searching for chat named: "${targetName}"...`);
                     const chats = await client.getChats();
                     const targetChat = chats.find(c => c.name === targetName);
-                    
+
                     if (!targetChat) {
                         console.error(`Chat not found with name: ${targetName}`);
                         failCount++;
