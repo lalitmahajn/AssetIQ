@@ -35,6 +35,22 @@ export async function apiPost(path, body) {
   return res.json();
 }
 
+export async function apiPostMultipart(path, formData) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    method: "POST",
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: formData,
+  });
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    window.dispatchEvent(new Event("auth:error"));
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) throw new Error(await res.text());
+  return res.json();
+}
+
 export async function apiPut(path, body) {
   const token = getToken();
   const res = await fetch(`${API_BASE}${path}`, {
@@ -81,4 +97,28 @@ export function parseJwt(token) {
   } catch (e) {
     return null;
   }
+}
+
+export async function apiDownload(path, filename) {
+  const token = getToken();
+  const res = await fetch(`${API_BASE}${path}`, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+
+  if (res.status === 401) {
+    localStorage.removeItem("token");
+    window.dispatchEvent(new Event("auth:error"));
+    throw new Error("Unauthorized");
+  }
+  if (!res.ok) throw new Error(await res.text());
+
+  const blob = await res.blob();
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  window.URL.revokeObjectURL(url);
+  document.body.removeChild(a);
 }
