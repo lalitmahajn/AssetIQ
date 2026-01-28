@@ -115,8 +115,8 @@ def _bootstrap_admin_if_env_present() -> None:
         raise RuntimeError(
             "BOOTSTRAP_ADMIN_PIN is too weak (min 6, block common pins like 1234/0000)"
         )
-    if "@" not in email or "." not in email:
-        raise RuntimeError("BOOTSTRAP_ADMIN_EMAIL must be a valid email-like value")
+    if len(email) < 3:
+        raise RuntimeError("BOOTSTRAP_ADMIN_EMAIL must be at least 3 characters")
 
     db = PlantSessionLocal()
     try:
