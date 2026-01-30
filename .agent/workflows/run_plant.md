@@ -16,3 +16,7 @@ This workflow starts the Plant environment using Docker Compose.
 
 3.  Check the status of the containers.
     docker ps --filter "name=plant"
+
+4.  Plant UI is ready at:
+    // turbo
+    Write-Host "Plant UI is ready: http://localhost:5173 (or check your PLANT_IP in .env)"

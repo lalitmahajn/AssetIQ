@@ -96,7 +96,7 @@ services:
     ports:
       - "${PLANT_UI_PORT:-5173}:5173"
     environment:
-      VITE_API_BASE: ${PLANT_API_BASE:-http://localhost:8000}
+      VITE_API_BASE: ${PLANT_API_BASE:-http://${PLANT_IP:-localhost}:${PLANT_HTTP_PORT:-8000}}
     volumes:
       - ../../ui:/app
       - /app/node_modules
