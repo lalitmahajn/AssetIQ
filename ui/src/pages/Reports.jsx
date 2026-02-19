@@ -109,6 +109,12 @@ export default function Reports() {
     }
 
     async function download(r, viewMode = false) {
+        let newWindow = null;
+        if (viewMode) {
+            // Open window immediately to avoid popup blocker
+            newWindow = window.open('about:blank', '_blank');
+        }
+
         try {
             // Get token
             const res = await apiPost("/reports/issue-download", {
@@ -117,24 +123,59 @@ export default function Reports() {
             });
             if (res.token) {
                 const url = `${import.meta.env.VITE_API_BASE}/reports/download?token=${res.token}${viewMode ? '&view=true' : ''}`;
-                window.open(url, "_blank");
+
+                if (viewMode && newWindow) {
+                    newWindow.location.href = url;
+                } else {
+                    // Create hidden link and click it
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.setAttribute('download', '');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            } else {
+                if (newWindow) newWindow.close();
             }
         } catch (e) {
+            if (newWindow) newWindow.close();
             alert("Failed to " + (viewMode ? "view" : "download") + ": " + e.message);
         }
     }
 
     async function downloadLastGenerated(viewMode = false) {
         if (!lastGenerated) return;
+
+        let newWindow = null;
+        if (viewMode) {
+            // Open window immediately to avoid popup blocker
+            newWindow = window.open('about:blank', '_blank');
+        }
+
         try {
             const res = await apiPost("/reports/issue-download", {
                 report_request_id: lastGenerated.id
             });
             if (res.token) {
                 const url = `${import.meta.env.VITE_API_BASE}/reports/download?token=${res.token}${viewMode ? '&view=true' : ''}`;
-                window.open(url, "_blank");
+
+                if (viewMode && newWindow) {
+                    newWindow.location.href = url;
+                } else {
+                    // Create hidden link and click it
+                    const link = document.createElement('a');
+                    link.href = url;
+                    link.setAttribute('download', '');
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                }
+            } else {
+                if (newWindow) newWindow.close();
             }
         } catch (e) {
+            if (newWindow) newWindow.close();
             alert("Failed to " + (viewMode ? "view" : "download") + ": " + e.message);
         }
     }
