@@ -67,7 +67,7 @@ export default function AssetManager() {
                 <form onSubmit={save} className="grid grid-cols-2 gap-4">
                     <input
                         className="border p-2 rounded"
-                        placeholder="Asset ID (Unique)"
+                        placeholder="Asset Code (Unique)"
                         value={form.id}
                         onChange={e => setForm({ ...form, id: e.target.value })}
                         disabled={editing} // ID cannot change
@@ -102,11 +102,11 @@ export default function AssetManager() {
                         onChange={e => setForm({ ...form, description: e.target.value })}
                     />
                     <div className="col-span-2 flex items-center gap-2">
-                         <input 
-                            type="checkbox" 
+                        <input
+                            type="checkbox"
                             id="is_critical"
-                            checked={form.is_critical} 
-                            onChange={e => setForm({...form, is_critical: e.target.checked})} 
+                            checked={form.is_critical}
+                            onChange={e => setForm({ ...form, is_critical: e.target.checked })}
                             className="w-4 h-4 text-blue-600 rounded"
                         />
                         <label htmlFor="is_critical" className="text-gray-700 font-medium select-none">Mark as Critical Asset</label>
@@ -126,27 +126,36 @@ export default function AssetManager() {
                     <thead className="bg-gray-100">
                         <tr>
                             <th className="p-3">Type</th>
-                            <th className="p-3">ID</th>
+                            <th className="p-3">Asset Code</th>
                             <th className="p-3">Name</th>
                             <th className="p-3">Parent</th>
                             <th className="p-3">Action</th>
                         </tr>
                     </thead>
                     <tbody className="divide-y">
-                        {assets.map(a => (
-                            <tr key={a.id}>
-                                <td className="p-3 text-xs font-mono">{a.asset_type}</td>
-                                <td className="p-3 font-medium">{a.id}</td>
-                                <td className="p-3">{a.name} 
-                                    {a.is_critical && <span className="ml-2 bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Critical</span>}
-                                </td>
-                                <td className="p-3 text-gray-500">{a.parent_id || "-"}</td>
-                                <td className="p-3 space-x-2">
-                                    <button onClick={() => edit(a)} className="text-blue-600 hover:underline">Edit</button>
-                                    <button onClick={() => doDelete(a.id)} className="text-red-600 hover:underline">Delete</button>
-                                </td>
-                            </tr>
-                        ))}
+                        {assets.map(a => {
+                            const parent = assets.find(p => p.id === a.parent_id);
+                            return (
+                                <tr key={a.id}>
+                                    <td className="p-3 text-xs font-mono">{a.asset_type}</td>
+                                    <td className="p-3 font-medium text-blue-600" title={a.id}>{a.asset_code || a.id}</td>
+                                    <td className="p-3">{a.name}
+                                        {a.is_critical && <span className="ml-2 bg-red-100 text-red-600 text-[10px] font-bold px-1.5 py-0.5 rounded uppercase">Critical</span>}
+                                    </td>
+                                    <td className="p-3 text-gray-500">
+                                        {parent ? (
+                                            <span title={a.parent_id}>{parent.asset_code || parent.id}</span>
+                                        ) : (
+                                            <span className="opacity-50">-</span>
+                                        )}
+                                    </td>
+                                    <td className="p-3 space-x-2">
+                                        <button onClick={() => edit(a)} className="text-blue-600 hover:underline">Edit</button>
+                                        <button onClick={() => doDelete(a.id)} className="text-red-600 hover:underline">Delete</button>
+                                    </td>
+                                </tr>
+                            );
+                        })}
                         {assets.length === 0 && <tr><td colSpan={5} className="p-4 text-center text-gray-500">No assets defined.</td></tr>}
                     </tbody>
                 </table>

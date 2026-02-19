@@ -371,7 +371,7 @@ export default function Tickets({ plantName }) {
                     autoComplete="off"
                   />
                   {/* New Asset Indicator */}
-                  {!isSearching && newAsset.length >= 3 && !assetSuggestions.some(a => a.id.toLowerCase() === newAsset.toLowerCase()) && (
+                  {!isSearching && newAsset.length >= 3 && !assetSuggestions.some(a => (a.asset_code || a.id).toLowerCase() === newAsset.toLowerCase()) && (
                     <div className="absolute top-1 right-0 text-xs font-medium text-blue-600 animate-pulse">
                       New Asset being created
                     </div>
@@ -379,8 +379,8 @@ export default function Tickets({ plantName }) {
                   {showAssetDrop && assetSuggestions.length > 0 && (
                     <div className="absolute top-full left-0 w-full bg-white border shadow-lg rounded-md mt-1 z-10">
                       {assetSuggestions.map(a => (
-                        <div key={a.id} onClick={() => { setNewAsset(a.id); setShowAssetDrop(false); }} className="p-2 hover:bg-gray-50 cursor-pointer text-sm font-medium">
-                          {a.id} <span className="text-gray-400 font-normal">- {a.name}</span>
+                        <div key={a.id} onClick={() => { setNewAsset(a.asset_code || a.id); setShowAssetDrop(false); }} className="p-2 hover:bg-gray-50 cursor-pointer text-sm font-medium">
+                          {a.asset_code || a.id} <span className="text-gray-400 font-normal">- {a.name}</span>
                         </div>
                       ))}
                     </div>

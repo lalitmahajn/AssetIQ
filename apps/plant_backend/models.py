@@ -192,7 +192,7 @@ class Asset(Base):
     criticality = Column(String(32), nullable=False, default="medium")
     tags = Column(JSON, nullable=False, default=list)
     location_area = Column(String(128), nullable=True)
-    location_line = Column(String(128), nullable=True)
+    sub_location_area = Column(String(128), nullable=True)
     status = Column(String(16), nullable=False, default="active")
     created_at_utc = Column(DateTime, nullable=False)
     updated_at_utc = Column(DateTime, nullable=True)

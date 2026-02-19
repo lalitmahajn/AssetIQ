@@ -125,10 +125,20 @@ def import_assets(
                 if loc:
                     asset.location_area = loc
 
+                sub_loc = get_val("sub-location area")
+                if sub_loc:
+                    asset.sub_location_area = sub_loc
+
+                desc = get_val("description")
+                if desc:
+                    asset.description = desc
+
                 crit = get_val("criticality")
                 if crit:
-                    asset.criticality = crit.lower()
-                    asset.is_critical = crit.lower() == "high" or crit.lower() == "critical"
+                    # Expecting Yes/No
+                    is_crit = crit.lower() == "yes"
+                    asset.is_critical = is_crit
+                    asset.criticality = "high" if is_crit else "medium"
 
                 # Store parent for pass 2
                 p_code = get_val("parent asset code")
@@ -181,11 +191,42 @@ def get_import_template():
     wb = openpyxl.Workbook()
     ws = wb.active
     ws.append(
-        ["Asset Code", "Name", "Category", "Parent Asset Code", "Location Area", "Criticality"]
+        [
+            "Asset Code",
+            "Name",
+            "Category",
+            "Parent Asset Code",
+            "Location Area",
+            "Sub-Location Area",
+            "Description",
+            "Criticality",
+        ]
     )
     # Sample
-    ws.append(["P01-M-001", "Main Feed Pump", "PUMP", "", "Zone A", "High"])
-    ws.append(["P01-M-001-MTR", "Pump Motor", "MOTOR", "P01-M-001", "Zone A", "Medium"])
+    ws.append(
+        [
+            "P01-M-001",
+            "Main Feed Pump",
+            "PUMP",
+            "",
+            "Zone A",
+            "Line 1",
+            "Primary feed pump",
+            "Yes",
+        ]
+    )
+    ws.append(
+        [
+            "P01-M-001-MTR",
+            "Pump Motor",
+            "MOTOR",
+            "P01-M-001",
+            "Zone A",
+            "Line 1",
+            "Motor for feed pump",
+            "No",
+        ]
+    )
 
     buf = BytesIO()
     wb.save(buf)

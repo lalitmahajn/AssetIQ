@@ -68,6 +68,7 @@ class AssetItem(BaseModel):
     description: str | None
     is_active: bool
     is_critical: bool
+    asset_code: str | None = None
 
 
 class AssetCreateIn(BaseModel):
@@ -258,7 +259,13 @@ def list_assets(
             # Simple case-insensitive match on ID or Name
             from sqlalchemy import or_
 
-            query = query.where(or_(Asset.id.ilike(f"%{q}%"), Asset.name.ilike(f"%{q}%")))
+            query = query.where(
+                or_(
+                    Asset.id.ilike(f"%{q}%"),
+                    Asset.asset_code.ilike(f"%{q}%"),
+                    Asset.name.ilike(f"%{q}%"),
+                )
+            )
 
         # Apply limit
         assets = db.execute(query.limit(limit)).scalars().all()
@@ -273,6 +280,7 @@ def list_assets(
                 description=a.description,
                 is_active=a.is_active,
                 is_critical=a.is_critical,
+                asset_code=a.asset_code,
             )
             for a in assets
         ]

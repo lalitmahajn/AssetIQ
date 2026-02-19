@@ -20,7 +20,7 @@ class AssetCreateIn(BaseModel):
     parent_id: str | None = None
     is_critical: bool = False
     location_area: str | None = None
-    location_line: str | None = None
+    sub_location_area: str | None = None
 
 
 @router.post("/create")

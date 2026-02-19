@@ -437,7 +437,16 @@ def create_ticket(
 ) -> Ticket:
     # [NEW] Smart Asset Creation Logic
     # 1. Case-insensitive lookup
-    existing_asset = db.execute(select(Asset).where(Asset.id.ilike(asset_id))).scalars().first()
+    # 1. Case-insensitive lookup by ID or Asset Code
+    from sqlalchemy import or_
+
+    existing_asset = (
+        db.execute(
+            select(Asset).where(or_(Asset.id.ilike(asset_id), Asset.asset_code.ilike(asset_id)))
+        )
+        .scalars()
+        .first()
+    )
 
     final_asset_id = asset_id
     if existing_asset:
@@ -781,7 +790,7 @@ def asset_create(db, payload: dict, actor_user_id: str | None, request_id: str |
         is_critical=payload.get("is_critical", False),
         tags=payload.get("tags", []),
         location_area=payload.get("location_area"),
-        location_line=payload.get("location_line"),
+        sub_location_area=payload.get("sub_location_area"),
         status=payload.get("status", "active").lower(),
         created_at_utc=now,
         updated_at_utc=now,
