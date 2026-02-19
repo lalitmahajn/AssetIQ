@@ -52,11 +52,17 @@ docker network create assetiq_net
 
 Open a terminal in the project root and run:
 
-### Start Plant (Everything is Automated!)
+### 1. Start Plant Services
 ```bash
 docker-compose -f docker/plant/docker-compose.plant.yml up -d --build
 ```
-> **Note**: This automatically creates the database, initializes all 20+ tables, and applies migrations. No manual steps required.
+
+### 2. Initialize Database (CRITICAL)
+You must apply the database migrations manually to create the tables:
+```bash
+docker-compose -f docker/plant/docker-compose.plant.yml exec -e MIGRATION_TARGET=plant plant_backend alembic upgrade head
+```
+> **Note**: Without this step, the application will crash because the database tables won't exist.
 
 ### Start HQ
 ```bash
