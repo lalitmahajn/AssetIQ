@@ -59,3 +59,17 @@ docker compose -f docker-compose.plant.yml exec -e MIGRATION_TARGET=plant plant_
 ### "Relation does not exist"
 If you see this error in logs, it usually means you skipped Step 3 (Migration). The code is trying to access a table or column that doesn't exist in the database yet.
 **Fix**: Run the migration command in Step 3.
+
+---
+
+## HQ Deployment (If Applicable)
+
+If you are running an HQ instance, you **must also apply the migration there**.
+Even though HQ doesn't actively use the `assets` table, the database schema must match the code to prevent future errors.
+
+**Run on HQ Machine:**
+```bash
+cd docker/hq
+docker compose -f docker-compose.hq.yml up -d --build
+docker compose -f docker-compose.hq.yml exec -e MIGRATION_TARGET=hq hq_backend alembic upgrade head
+```
