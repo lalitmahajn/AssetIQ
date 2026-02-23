@@ -1,4 +1,5 @@
 import logging
+import threading
 import time
 import traceback
 from datetime import datetime
@@ -30,35 +31,66 @@ def get_client(config):
 
 def read_tag_value(client, tag, slave_id):
     try:
-        # Simplification: Assume Holding Registers for now.
-        # Ideally, we should support Coil/Input/Holding based on address range or config
-        # Here: Address 0-9999 = Output Coils (1), 10000-19999 = Input (2), 30000 = Input Reg (4), 40000 = Holding (3)
-        # For simplicity in this v1: We assume Holding Registers (40000 offset or just raw address)
+        # Determine Modbus function code based on address range
+        # 0xxxx -> Coils (Read/Write)
+        # 1xxxx -> Discrete Inputs (Read Only)
+        # 3xxxx -> Input Registers (Read Only)
+        # 4xxxx -> Holding Registers (Read/Write)
 
-        # Read 1 register for FLOAT might need 2 registers, but let's assume BOOL/INT16 is 1 reg
+        address = tag.address
+        res = None
+
+        # Count calculation (approximate for now)
         count = 1
         if tag.data_type == "FLOAT32":
             count = 2
 
-        # Modbus address usually 0-indexed in pymodbus, but users might enter 1-indexed (e.g. 40001)
-        # We will assume user enters raw address 0-65535
+        # Pymodbus 3.x uses 'address' (0-based) and 'count'
+        # We assume tag.address is the "User Address" (e.g. 40001)
 
-        # We will assume user enters raw address 0-65535
+        if 0 <= address <= 9999:
+            # Coils
+            res = client.read_coils(address, count=1, device_id=slave_id)
 
-        # Pymodbus 3.11+ uses 'device_id' instead of 'slave' or 'unit'.
-        # We also need to retrieve 'count' as keyword argument
-        rr = client.read_holding_registers(tag.address, count=count, device_id=slave_id)
+        elif 10000 <= address <= 19999:
+            # Discrete Inputs
+            # Map 10001 -> 0, etc.
+            res = client.read_discrete_inputs(address - 10000, count=1, device_id=slave_id)
 
-        if rr.isError():
-            logger.error(f"Error reading tag {tag.tag_name}: {rr}")
+        elif 30000 <= address <= 39999:
+            # Input Registers
+            # Map 30001 -> 0
+            res = client.read_input_registers(address - 30000, count=count, device_id=slave_id)
+
+        elif 40001 <= address <= 49999:
+            # Holding Registers (Standard Range)
+            # Map 40001 -> 0
+            res = client.read_holding_registers(address - 40001, count=count, device_id=slave_id)
+
+        else:
+            # Fallback / Raw Addressing for Holding Registers
+            # If user enters 50000, we read address 50000 directly as holding register
+            res = client.read_holding_registers(address, count=count, device_id=slave_id)
+
+        if res.isError():
+            logger.error(f"Error reading tag {tag.tag_name} (Addr: {address}): {res}")
             return None
 
-        val = rr.registers[0]
+        # Extract value
+        if 0 <= address <= 19999:
+            # Coils/Discrete Inputs return boolean bits
+            # pymodbus bits: [True, False, ...]
+            val = 1 if res.bits[0] else 0
+        else:
+            # Registers
+            val = res.registers[0]
+            # TODO: Proper 32-bit float decoding if data_type=FLOAT32
+            # For now, just taking first register or need combinatorics
 
-        # TODO: Handle Float/32-bit conversion if needed
-        # For now, just multiplier scaling
+        # Apply multiplier
         scaled_val = val * (tag.multiplier or 1.0)
         return scaled_val
+
     except Exception as e:
         logger.error(f"Exception reading tag {tag.tag_name}: {e}")
         return None
@@ -179,9 +211,6 @@ def process_plc(db, config):
         traceback.print_exc()
     finally:
         client.close()
-
-
-import threading
 
 
 def run_loop():
